@@ -1,0 +1,9 @@
+const $ = (s)=>document.querySelector(s);
+const match=window.location.pathname.match(/^\/sign\/([a-f0-9]{64})$/);
+const token=match?.[1];
+const endpoint=token?`/api/agreements/${token}`:null;
+function showError(s){$('#signStatus').textContent=s;$('#signStatus').className='sign-error';}
+async function init(){if(!endpoint){showError('Invalid agreement link.');return;}try{const r=await fetch(endpoint,{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||'Agreement unavailable.');$('#itemRef').textContent=`Submission ${data.itemId}`;$('#expires').textContent=`Link expires ${new Date(data.expiresAt).toLocaleDateString()}`;$('#agreementText').textContent=data.terms;if(data.signed){success(data.signedAt);return;}$('#signScreen').hidden=false;}catch(e){showError(e.message);}}
+function success(date){$('#signStatus').textContent='';$('#signScreen').hidden=true;$('#signedScreen').hidden=false;$('#signedMessage').textContent=`Signed ${new Date(date||Date.now()).toLocaleString()}. The signed agreement has been saved with your submission.`;$('#pdfLink').href=endpoint+'/pdf';}
+$('#signForm').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button[type=submit]');button.disabled=true;$('#signStatus').textContent='Recording signature…';try{const body={signerName:form.elements.signerName.value,email:form.elements.email.value,electronicConsent:form.elements.electronicConsent.checked,agreeTerms:form.elements.agreeTerms.checked,typedSignature:form.elements.typedSignature.checked};const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'Unable to save your signature.');success();}catch(e){showError(e.message);}finally{button.disabled=false;}});
+init();
