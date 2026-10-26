@@ -6,6 +6,7 @@ import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import {fileURLToPath} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const project=path.resolve(here,'..');
 const dir=mkdtempSync(path.join(tmpdir(),'restyle-test-'));
@@ -14,7 +15,7 @@ const jpeg='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP///////////
 let session='';let submissionId='';let photoId='';
 async function pickPort(){return new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});}
 async function request(uri,options={}){const r=await fetch(base+uri,{...options,headers:{'Content-Type':'application/json',...(session?{Cookie:session}:{}),...options.headers}});const data=(r.headers.get('content-type')||'').includes('json')?await r.json():null;return {r,data};}
-before(async()=>{port=await pickPort();base=`http://127.0.0.1:${port}`;child=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,PORT:String(port),DATA_DIR:dir,ADMIN_PASSWORD:'test-password-do-not-use-2026',SESSION_SECRET:'test-secret-example-unsafe-not-for-use-anywhere-9090909090',PUBLIC_BASE_URL:base,COOKIE_SECURE:'false'},stdio:['ignore','pipe','pipe']});await new Promise((resolve,reject)=>{let n=0;const interval=setInterval(async()=>{try{const r=await fetch(base+'/api/health');if(r.ok){clearInterval(interval);resolve();}}catch{}if(++n>80){clearInterval(interval);reject(Error('Server failed to start'));}},75);});});
+before(async()=>{port=await pickPort();base=`http://127.0.0.1:${port}`;child=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,PORT:String(port),DATA_DIR:dir,ADMIN_PASSWORD:'test-password-do-not-use-2026',SESSION_SECRET:'test-secret-example-unsafe-not-for-use-anywhere-9090909090',PUBLIC_BASE_URL:base,COOKIE_SECURE:'false',ADMIN_NOTIFY_EMAIL:'staff@example.com',AGREEMENT_PILOT_MODE:'true',CONSIGNMENT_AGREEMENT_TEXT:'PILOT NONBINDING TEST ONLY. Consignor retains ownership until completed sale. This draft is not for genuine customers and no goods may be shipped. No commission structure is finalized.',CONSIGNMENT_SHIPPING_INSTRUCTIONS:'PILOT MODE: DO NOT SHIP. No real receiving address is supplied.'},stdio:['ignore','pipe','pipe']});await new Promise((resolve,reject)=>{let n=0;const interval=setInterval(async()=>{try{const r=await fetch(base+'/api/health');if(r.ok){clearInterval(interval);resolve();}}catch{}if(++n>80){clearInterval(interval);reject(Error('Server failed to start'));}},75);});});
 after(()=>{child?.kill('SIGTERM');rmSync(dir,{recursive:true,force:true});});
 test('Health and public landing render',async()=>{const x=await request('/api/health');assert.equal(x.r.status,200);assert.equal(x.data.ok,true);const r=await fetch(base+'/');assert.equal(r.status,200);const page=await r.text();assert.match(page,/Give Your Style a Second Life/);assert.match(page,/href="https:\/\/www\.ebay\.com\/sch\/i\.html\?_ssn=ssammikat99u2"[^>]*>Shop Now/);assert.match(page,/href="\/submit">Upload Your Item for Review/);});
 test('Photo submission rejects missing photos',async()=>{const x=await request('/api/submissions',{method:'POST',body:JSON.stringify({firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',consent:true,ownerConfirmed:true,photos:[]})});assert.equal(x.r.status,400);});
@@ -59,4 +60,57 @@ test('Staging pilot accepts five-character password; other production environmen
     prod.kill('SIGTERM');
     rmSync(prodDir,{recursive:true,force:true});
   }
+});
+
+test('Approval signing flow stores protected PDF and queues shipping only after signature',async()=>{
+ const payload={firstName:'Alex',email:'alex@example.com',brand:'Prada',category:'Handbags',condition:'Excellent',description:'Test only',consent:true,ownerConfirmed:true,photos:[{name:'photo.jpg',data:jpeg}]};
+ const submitted=await request('/api/submissions',{method:'POST',body:JSON.stringify(payload)});
+ assert.equal(submitted.r.status,201);
+ const id=submitted.data.id;
+ let detail=(await request(`/api/admin/submissions/${id}`)).data;
+ assert.equal(detail.mails.filter(x=>x.kind==='confirmation').length,1);
+ assert.equal(detail.mails.filter(x=>x.kind==='admin_notification').length,1);
+ const approved=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'ACCEPTED',estimateDollars:150})});
+ assert.equal(approved.r.status,200,JSON.stringify(approved.data));
+ detail=(await request(`/api/admin/submissions/${id}`)).data;
+ assert.equal(detail.agreement.state,'PENDING');
+ assert.equal(detail.mails.some(x=>x.kind==='approval_sign'),true);
+ assert.equal(detail.mails.some(x=>x.kind==='shipping'),false);
+ const blocked=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'AWAITING_SHIPMENT'})});
+ assert.equal(blocked.r.status,409);
+ const db=new DatabaseSync(path.join(dir,'restyle.sqlite'));
+ const row=db.prepare("SELECT html FROM mail_outbox WHERE submission_id=? AND kind='approval_sign'").get(id);
+ db.close();
+ const token=row.html.match(/\/sign\/([a-f0-9]{64})/)?.[1];
+ assert.match(token,/^[a-f0-9]{64}$/);
+ const page=await fetch(base+`/sign/${token}`);assert.equal(page.status,200);assert.match(await page.text(),/Electronic signature/);
+ const view=await request(`/api/agreements/${token}`);assert.equal(view.r.status,200);
+ assert.match(view.data.terms,/PILOT NONBINDING/);
+ const wrong=await request(`/api/agreements/${token}`,{method:'POST',body:JSON.stringify({signerName:'Alex Reviewer',email:'wrong@example.com',electronicConsent:true,agreeTerms:true,typedSignature:true})});
+ assert.equal(wrong.r.status,400);
+ const signed=await request(`/api/agreements/${token}`,{method:'POST',body:JSON.stringify({signerName:'Alex Reviewer',email:'alex@example.com',electronicConsent:true,agreeTerms:true,typedSignature:true})});
+ assert.equal(signed.r.status,200,JSON.stringify(signed.data));
+ detail=(await request(`/api/admin/submissions/${id}`)).data;
+ assert.equal(detail.agreement.state,'SIGNED');
+ assert.equal(detail.item.status,'AWAITING_SHIPMENT');
+ assert.equal(detail.mails.some(x=>x.kind==='shipping'),true);
+ assert.equal(detail.mails.some(x=>x.kind==='signed_receipt'),true);
+ assert.equal(detail.mails.some(x=>x.kind==='agreement_signed_admin'),true);
+ assert.equal(detail.mails.filter(x=>x.kind==='shipping')[0].state,'SETUP_REQUIRED');
+ const signedPdf=await fetch(base+`/api/admin/submissions/${id}/agreement.pdf`,{headers:{Cookie:session}});
+ assert.equal(signedPdf.status,200);assert.match(signedPdf.headers.get('content-type'),/application\/pdf/);assert.ok((await signedPdf.arrayBuffer()).byteLength > 800);
+ const noAccess=await fetch(base+`/api/admin/submissions/${id}/agreement.pdf`);assert.equal(noAccess.status,401);
+ const second=await request(`/api/agreements/${token}`,{method:'POST',body:JSON.stringify({signerName:'Alex Reviewer',email:'alex@example.com',electronicConsent:true,agreeTerms:true,typedSignature:true})});assert.equal(second.r.status,409);
+ const signedPdfCustomer=await fetch(base+`/api/agreements/${token}/pdf`);assert.equal(signedPdfCustomer.status,200);
+});
+
+test('Rejection queues notification without agreement link and blocks unsigned listing',async()=>{
+ const payload={firstName:'Sam',email:'sam@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',description:'Test item',consent:true,ownerConfirmed:true,photos:[{name:'photo.jpg',data:jpeg}]};
+ const added=await request('/api/submissions',{method:'POST',body:JSON.stringify(payload)});assert.equal(added.r.status,201);
+ const id=added.data.id;
+ const rejected=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'REJECTED'})});assert.equal(rejected.r.status,200);
+ const d=(await request(`/api/admin/submissions/${id}`)).data;
+ assert.equal(d.mails.some(x=>x.kind==='status_REJECTED'),true);
+ assert.equal(d.agreement,null);
+ const cannotList=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'LISTED',receivedVerified:true})});assert.equal(cannotList.r.status,409);
 });
