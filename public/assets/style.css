@@ -5,57 +5,60 @@
 /* RESTYLE desktop readability pass - optimized for 15-inch laptop screens */
 @media (min-width:1101px){
   /* More useful horizontal space without stretching small-screen layouts */
-  .container{max-width:1360px;padding-left:clamp(32px,2.8vw,44px);padding-right:clamp(32px,2.8vw,44px)}
-  .nav{height:102px;gap:34px}
-  .brand{font-size:26px}
-  .nav-links{gap:33px}
-  .nav-links a{font-size:14px}
-  .header-cta{font-size:14px!important}
-  .btn{font-size:15px;padding:17px 26px}
-  .btn-large{padding:21px 28px}
-  .eyebrow{font-size:12px}
-  .hero{min-height:700px;grid-template-columns:54% 46%}
-  .hero-art{height:700px}
-  .hero-copy{padding-right:24px}
-  .hero h1{font-size:clamp(70px,5.1vw,82px)}
-  .hero h2{font-size:clamp(26px,2vw,31px);max-width:610px}
-  .hero-copy>p{font-size:17.5px;max-width:595px;line-height:1.7}
-  .hero-actions{margin-top:40px}
-  .link-arrow{font-size:15px}
-  .hero-badges{font-size:13px}
-  .image-note{font-size:14px}
-  .marquee .container{min-height:76px}
-  .marquee span{font-size:11px}
-  .section{padding-top:115px;padding-bottom:115px}
-  .section-header h2,.section h2,.final-cta h2{font-size:clamp(43px,3.9vw,57px)}
-  .section-header p{font-size:17px;max-width:365px}
-  .steps,.category-grid{gap:22px}
-  .step{min-height:305px;padding:33px 27px}
-  .step h3,.category-card h3{font-size:21px}
-  .step p,.category-card p{font-size:15.5px}
-  .category-card{min-height:280px;padding:34px 28px}
-  .about-grid{gap:100px}
-  .about-visual{min-height:420px}
-  .about-grid p{font-size:17px}
-  .faq-list summary{font-size:19px}
-  .faq-list p{font-size:16px}
-  .final-cta p{font-size:18px}
-  .footer-main p{font-size:14px}
-  .footer-links a{font-size:14px}
-  .footer-bottom{font-size:12px}
-  .submit-wrap{max-width:1080px;padding-top:34px}
-  .submit-header h1{font-size:clamp(54px,5vw,74px)}
-  .submit-header p{font-size:17px}
-  .form-shell{padding:46px}
-  .form-heading h2{font-size:23px}
-  .form-heading p{font-size:15px}
-  .fields label{font-size:15px}
-  .fields input,.fields select{height:54px;font-size:16px}
-  .drop-zone h3{font-size:20px}
-  .drop-zone p{font-size:14px}
-  .check-row{font-size:15px}
-  .form-footer p{font-size:14px}
-  .legal-page{max-width:920px}
-  .legal-page p,.legal-page li{font-size:17px}
+  .container{max-width:1496px;padding-left:clamp(32px,2.8vw,44px);padding-right:clamp(32px,2.8vw,44px)}
+  .nav{height:108px;gap:35px}
+  .brand{font-size:29px}
+  .nav-links{gap:36px}
+  .nav-links a{font-size:15.4px}
+  .header-cta{font-size:15.4px!important}
+  .btn{font-size:16.5px;padding:19px 29px}
+  .btn-large{padding:23px 31px}
+  .eyebrow{font-size:13.2px}
+  .hero{min-height:750px;grid-template-columns:54% 46%}
+  .hero-art{height:750px}
+  .hero-copy{padding-right:25px}
+  .hero h1{font-size:clamp(72px,5.65vw,90px)}
+  .hero h2{font-size:clamp(28px,2.2vw,34px);max-width:660px}
+  .hero-copy>p{font-size:19.2px;max-width:630px;line-height:1.7}
+  .hero-actions{margin-top:42px}
+  .link-arrow{font-size:16.5px}
+  .hero-badges{font-size:14.3px}
+  .image-note{font-size:15.4px}
+  .marquee .container{min-height:82px}
+  .marquee span{font-size:12.1px}
+  .section{padding-top:122px;padding-bottom:122px}
+  .section-header h2,.section h2,.final-cta h2{font-size:clamp(47px,4.25vw,62px)}
+  .section-header p{font-size:18.7px;max-width:400px}
+  .steps,.category-grid{gap:24px}
+  .step{min-height:320px;padding:36px 29px}
+  .step h3,.category-card h3{font-size:23px}
+  .step p,.category-card p{font-size:17px}
+  .category-card{min-height:295px;padding:37px 30px}
+  .about-grid{gap:104px}
+  .about-visual{min-height:455px}
+  .about-grid p{font-size:18.7px}
+  .faq-list summary{font-size:21px}
+  .faq-list p{font-size:17.6px}
+  .final-cta p{font-size:19.8px}
+  .footer-main p{font-size:15.4px}
+  .footer-links a{font-size:15.4px}
+  .footer-bottom{font-size:13.2px}
+  .submit-wrap{max-width:1188px;padding-top:38px}
+  .submit-header h1{font-size:clamp(59px,5.5vw,81px)}
+  .submit-header p{font-size:18.7px}
+  .form-shell{padding:50px}
+  .form-heading h2{font-size:25px}
+  .form-heading p{font-size:16.5px}
+  .fields label{font-size:16.5px}
+  .fields input,.fields select{height:59px;font-size:17.5px}
+  .drop-zone h3{font-size:22px}
+  .drop-zone p{font-size:15.4px}
+  .check-row{font-size:16.5px}
+  .form-footer p{font-size:15.4px}
+  .legal-page{max-width:1012px}
+  .legal-page p,.legal-page li{font-size:18.7px}
 }
 
+
+/* Keep the navigation and hero balanced on narrower desktop widths. */
+@media (min-width:1101px) and (max-width:1260px){.nav-links{gap:18px}.hero h1{font-size:clamp(61px,5.65vw,72px)}.hero h2{font-size:26px}}
