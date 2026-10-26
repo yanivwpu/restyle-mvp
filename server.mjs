@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createSigning } from './signing.mjs';
+import { createListingDrafts } from './listing-drafts.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -82,6 +83,7 @@ async function sendPending(submissionId){const pending=db.prepare("SELECT * FROM
  if(latest)db.prepare('UPDATE submissions SET email_status=? WHERE id=?').run(latest.state,submissionId);
  return{sent,configured:MAIL_ENABLED};}
 const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,sendPending,audit:(id,event)=>audit(id,event)});
+const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'index.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
@@ -135,6 +137,22 @@ async function handle(req,res){
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
  if(req.method==='GET'&&p==='/api/admin/submissions'){
    const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
+ }
+ // Authenticated listing-draft management only. No code path here publishes to eBay.
+ const listingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/listing(?:\/(generate|save|approve))?$/);
+ if(listingRoute){
+  const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(listingRoute[1]);
+  if(!item)return problem(res,404,'Submission not found.');
+  const action=listingRoute[2];
+  if(req.method==='GET'&&!action)return json(res,200,listingDrafts.inspect(item));
+  if(req.method==='POST'&&action){
+   if(!throttle(req,'listing_'+action,15,15*60_000))return problem(res,429,'Too many listing draft requests.');
+   const body=action==='approve'?{}:await readJson(req,8000);
+   if(action==='generate')return json(res,200,await listingDrafts.generate(item,body));
+   if(action==='save')return json(res,200,listingDrafts.save(item,body));
+   if(action==='approve')return json(res,200,listingDrafts.approve(item));
+  }
+  return problem(res,405,'Method not allowed.');
  }
  const detail=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})$/);
  if(req.method==='GET'&&detail){const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(detail[1]);if(!item)return problem(res,404,'Submission not found.');const photos=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=?').all(item.id);const events=db.prepare('SELECT event,created_at FROM admin_events WHERE submission_id=? ORDER BY id DESC').all(item.id);const mails=db.prepare('SELECT id,kind,state,attempts,last_error,created_at FROM mail_outbox WHERE submission_id=? ORDER BY created_at DESC').all(item.id);return json(res,200,{item,photos,events,mails,agreement:signing.state(item.id),agreementConfigured:signing.enabled});}
