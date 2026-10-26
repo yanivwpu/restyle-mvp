@@ -23,3 +23,40 @@ test('Admin endpoints require authentication',async()=>{const x=await request('/
 test('Login obtains HttpOnly authenticated cookie',async()=>{const x=await request('/api/admin/login',{method:'POST',body:JSON.stringify({password:'test-password-do-not-use-2026'})});assert.equal(x.r.status,200);const c=x.r.headers.get('set-cookie')||'';assert.match(c,/HttpOnly/);session=c.split(';')[0];assert.equal((await request('/api/admin/session')).data.authenticated,true);});
 test('Admin can retrieve submission details and protected photos',async()=>{const rows=(await request('/api/admin/submissions')).data.items;assert.equal(rows.length,1);assert.equal(rows[0].id,submissionId);const r=(await request(`/api/admin/submissions/${submissionId}`)).data;assert.equal(r.photos.length,1);photoId=r.photos[0].id;const ok=await fetch(base+`/api/admin/photos/${photoId}`,{headers:{Cookie:session}});assert.equal(ok.status,200);const denied=await fetch(base+`/api/admin/photos/${photoId}`);assert.equal(denied.status,401);});
 test('Warehouse verification gate blocks listing unreceived merchandise',async()=>{const id=submissionId;const blocked=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'LISTED',receivedVerified:false})});assert.equal(blocked.r.status,409);const allowed=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'RECEIVED',receivedVerified:true,sku:'REST-1',binLocation:'A1',estimateDollars:140})});assert.equal(allowed.r.status,200);const detail=(await request(`/api/admin/submissions/${id}`)).data.item;assert.equal(detail.received_verified,1);assert.equal(detail.estimate_cents,14000);});
+
+
+test('Staging pilot accepts five-character password; other production environments reject it', async()=>{
+  const shortPassword='P7k3!';
+  const safeSession='unit-test-session-secret-at-least-thirty-two-chars-6789';
+  const stageDir=mkdtempSync(path.join(tmpdir(),'restyle-stage-password-'));
+  const stagePort=await pickPort();
+  const stageBase=`http://127.0.0.1:${stagePort}`;
+  const stage=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,NODE_ENV:'production',RAILWAY_ENVIRONMENT_NAME:'staging',PORT:String(stagePort),DATA_DIR:stageDir,ADMIN_PASSWORD:shortPassword,SESSION_SECRET:safeSession,COOKIE_SECURE:'false'},stdio:['ignore','pipe','pipe']});
+  try{
+    let ready=false;
+    for(let i=0;i<80;i++){
+      await new Promise(resolve=>setTimeout(resolve,75));
+      try{const response=await fetch(stageBase+'/api/health');if(response.ok){ready=true;break;}}catch{}
+    }
+    assert.equal(ready,true,'five-character staging pilot password allows server startup');
+    const response=await fetch(stageBase+'/api/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:shortPassword})});
+    assert.equal(response.status,200,'five-character password works for staging login');
+  } finally {
+    stage.kill('SIGTERM');
+    rmSync(stageDir,{recursive:true,force:true});
+  }
+
+  const prodDir=mkdtempSync(path.join(tmpdir(),'restyle-prod-password-'));
+  const prodPort=await pickPort();
+  const prod=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,NODE_ENV:'production',RAILWAY_ENVIRONMENT_NAME:'production',PORT:String(prodPort),DATA_DIR:prodDir,ADMIN_PASSWORD:shortPassword,SESSION_SECRET:safeSession},stdio:['ignore','pipe','pipe']});
+  try{
+    let output='';
+    prod.stderr.on('data',chunk=>{output+=chunk.toString();});
+    const exitCode=await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>{prod.kill('SIGTERM');reject(Error('Production password test timed out'));},4000);prod.once('exit',code=>{clearTimeout(timeout);resolve(code);});});
+    assert.notEqual(exitCode,0,'five-character production password is rejected');
+    assert.match(output,/14\+ chars/);
+  } finally {
+    prod.kill('SIGTERM');
+    rmSync(prodDir,{recursive:true,force:true});
+  }
+});
