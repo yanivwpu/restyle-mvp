@@ -2,42 +2,44 @@
 
 /* Match the RESTYLE desktop readability pass in the review workspace */
 @media (min-width:1101px){
-  .admin-header{height:84px;padding:0 42px}
-  .admin-heading{font-size:15px}
-  .pilot-tag{font-size:10px}
-  .small-button{font-size:14px;padding:12px 16px}
-  .admin-main{max-width:1580px;padding:42px}
-  .login-box{max-width:520px;padding:52px}
-  .login-box h1{font-size:41px}
-  .login-box p{font-size:16px}
-  .login-box label{font-size:14px}
-  .login-box .hint{font-size:13px}
-  .dash-title h1{font-size:37px}
-  .dash-title p{font-size:15px}
-  .stats{gap:17px}
-  .stat{padding:24px}
-  .stat strong{font-size:32px}
-  .stat span{font-size:14px}
-  .dashboard-grid{grid-template-columns:410px minmax(0,1fr);gap:22px}
-  .panel-toolbar{padding:20px}
-  .panel-toolbar input,.panel-toolbar select{font-size:14px}
-  .item-row{padding:20px;gap:17px}
-  .item-thumbnail{width:72px;height:72px}
-  .item-copy strong{font-size:16px}
-  .item-copy small{font-size:13px}
-  .badge-status{font-size:11px}
-  .detail-wrap{padding:32px}
-  .detail-head h2{font-size:30px}
-  .detail-meta,.ref-small{font-size:14px}
-  .meta-box{padding:16px;font-size:14px}
-  .meta-box span{font-size:12px}
-  .gallery img{height:155px}
-  .detail-editor{padding:29px}
-  .detail-editor h3{font-size:20px}
-  .detail-editor label{font-size:14px}
-  .detail-editor input,.detail-editor select,.detail-editor textarea{font-size:15px}
-  .editor-actions p{font-size:13px}
-  .detail-mail h3,.detail-history h3{font-size:16px}
-  .mail-line{font-size:14px}
+  .admin-header{height:91px;padding:0 46px}
+  .admin-heading{font-size:16.5px}
+  .pilot-tag{font-size:11px}
+  .small-button{font-size:15.4px;padding:13px 18px}
+  .admin-main{max-width:1660px;padding:46px}
+  .login-box{max-width:572px;padding:57px}
+  .login-box h1{font-size:45px}
+  .login-box p{font-size:17.6px}
+  .login-box label{font-size:15.4px}
+  .login-box .hint{font-size:14.3px}
+  .dash-title h1{font-size:41px}
+  .dash-title p{font-size:16.5px}
+  .stats{gap:19px}
+  .stat{padding:26px}
+  .stat strong{font-size:35px}
+  .stat span{font-size:15.4px}
+  .dashboard-grid{grid-template-columns:440px minmax(0,1fr);gap:24px}
+  .panel-toolbar{padding:22px}
+  .panel-toolbar input,.panel-toolbar select{font-size:15.4px}
+  .item-row{padding:22px;gap:19px}
+  .item-thumbnail{width:79px;height:79px}
+  .item-copy strong{font-size:17.6px}
+  .item-copy small{font-size:14.3px}
+  .badge-status{font-size:12px}
+  .detail-wrap{padding:35px}
+  .detail-head h2{font-size:33px}
+  .detail-meta,.ref-small{font-size:15.4px}
+  .meta-box{padding:18px;font-size:15.4px}
+  .meta-box span{font-size:13.2px}
+  .gallery img{height:170px}
+  .detail-editor{padding:32px}
+  .detail-editor h3{font-size:22px}
+  .detail-editor label{font-size:15.4px}
+  .detail-editor input,.detail-editor select,.detail-editor textarea{font-size:16.5px}
+  .editor-actions p{font-size:14.3px}
+  .detail-mail h3,.detail-history h3{font-size:17.6px}
+  .mail-line{font-size:15.4px}
 }
 
+
+@media (min-width:1101px) and (max-width:1290px){.admin-main{padding:30px}.dashboard-grid{grid-template-columns:355px minmax(0,1fr);gap:16px}.detail-wrap{padding:24px}}
