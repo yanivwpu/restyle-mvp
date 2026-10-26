@@ -18,8 +18,11 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT
 const MAIL_ENABLED = Boolean(RESEND_API_KEY && EMAIL_FROM && !EMAIL_FROM.includes('your-verified-domain'));
 const PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' || PRODUCTION;
-if(PRODUCTION && (ADMIN_PASSWORD.length<14 || SESSION_SECRET.length<32)) {
-  throw new Error('Public deployment requires ADMIN_PASSWORD (14+ chars) and SESSION_SECRET (32+ chars).');
+// Short passwords are permitted only in the isolated staging pilot.
+// Production launch environments continue to require a stronger password.
+const MIN_ADMIN_PASSWORD_LENGTH = process.env.RAILWAY_ENVIRONMENT_NAME === 'staging' ? 5 : 14;
+if(PRODUCTION && (ADMIN_PASSWORD.length < MIN_ADMIN_PASSWORD_LENGTH || SESSION_SECRET.length < 32)) {
+  throw new Error(`Deployment requires ADMIN_PASSWORD (${MIN_ADMIN_PASSWORD_LENGTH}+ chars) and SESSION_SECRET (32+ chars).`);
 }
 const ALLOWED_STATUSES = new Set(['SUBMITTED','NEEDS_INFO','ACCEPTED','AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID','REJECTED']);
 const CATEGORIES = new Set(['Handbags','Clothing','Shoes','Jewelry','Accessories','Other']);
@@ -88,7 +91,7 @@ async function handle(req,res){
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED});
  if(req.method==='POST'&&!checkOrigin(req))return problem(res,403,'Invalid request origin.');
  if(req.method==='POST'&&p==='/api/admin/login'){
-   if(!throttle(req,'login',12,15*60_000))return problem(res,429,'Too many attempts.');
+   if(!throttle(req,'login',6,15*60_000))return problem(res,429,'Too many attempts.');
    if(!ADMIN_PASSWORD||!SESSION_SECRET)return problem(res,503,'Admin login is not configured.');
    const b=await readJson(req,2000);if(!secureEqual(b.password||'',ADMIN_PASSWORD))return problem(res,401,'Incorrect password.');
    setCookie(res,token());return json(res,200,{ok:true});
