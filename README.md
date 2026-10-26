@@ -42,6 +42,20 @@ Requires **Node.js 22.13+** (includes the built-in `node:sqlite` module). No NPM
 
 **Tests:** `npm test` (uses Node's built-in test runner; no downloads). Tests cover saving a photo, email outbox pending, admin login, private images and physical receipt listing protection.
 
+## eBay listing assistant — staging foundation (October 2026)
+
+Inside **Admin → item detail**, staff can prepare an internal eBay listing draft after the customer's agreement is signed and the item's warehouse receipt, SKU and storage bin are verified.
+
+- Staff enter verified size, color, material, measurements, wear/flaws and other facts. A confirmation checkbox is required before draft generation.
+- **Create starter draft** is a local template, not AI and not a live eBay listing.
+- **Generate AI draft** uses the real OpenAI Responses API with structured JSON when `OPENAI_API_KEY` is present in Railway. Optional `RESTYLE_AI_MODEL` defaults to `gpt-4.1-mini`. Only warehouse-confirmed product details are sent; photos or consignor contact data are **not transmitted** to the AI provider in this phase. Generation is disabled when unconfigured.
+- Staff can edit title, plain-text description, asking price, category suggestion and numeric category ID. The local category ID is **not automatically validated against eBay yet**.
+- **Mark staff-reviewed** only changes the private draft record. No eBay seller token, no eBay GraphQL integration and **no eBay publishing endpoint** exist in this stage.
+- Phase B will connect the seller's eBay account using OAuth, upload warehouse photographs (after authorization), add Inventory Mapping AI suggestions, verify Taxonomy required aspects, and test unpublished offers in the Sandbox.
+- Phase C can add an authenticated explicit Publish action after validating seller business policies, inventory location, photo rights and the fulfillment/inventory gates. The production API must guard against duplicate SKU/offer publication.
+
+Track implementation at [eBay AI Listing Engine issue #2](https://github.com/yanivwpu/restyle-mvp/issues/2).
+
 ## Email confirmation setup
 
 1. Set up a transactional sender with [Resend](https://resend.com), verify a domain you control and create an API key.
