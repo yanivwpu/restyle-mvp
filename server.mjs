@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { createSigning } from './signing.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -80,16 +81,28 @@ async function sendPending(submissionId){const pending=db.prepare("SELECT * FROM
  const latest=db.prepare("SELECT state FROM mail_outbox WHERE submission_id=? AND kind='confirmation' ORDER BY created_at DESC LIMIT 1").get(submissionId);
  if(latest)db.prepare('UPDATE submissions SET email_status=? WHERE id=?').run(latest.state,submissionId);
  return{sent,configured:MAIL_ENABLED};}
+const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,sendPending,audit:(id,event)=>audit(id,event)});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
-function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'index.html','/terms':'index.html'};if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
+function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'index.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
 function audit(id,event){db.prepare('INSERT INTO admin_events(submission_id,event,created_at) VALUES(?,?,?)').run(id,event,now());}
 async function handle(req,res){
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
  const url=new URL(req.url||'/',`http://${req.headers.host||'localhost'}`);const p=url.pathname;
  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'restyle-mvp'});
- if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED});
+ if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  if(req.method==='POST'&&!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+ // Private, expiring bearer URLs are sent only to the customer's submitted email.
+ const signMatch=p.match(/^\/api\/agreements\/([a-f0-9]{64})$/);
+ if(req.method==='GET'&&signMatch){const data=signing.preview(signMatch[1]);if(!data)return problem(res,404,'Agreement not found.');if(data.expired)return problem(res,410,'Agreement link expired.');return json(res,200,data);}
+ if(req.method==='POST'&&signMatch){
+   if(!throttle(req,'agreement_sign',10,60*60_000))return problem(res,429,'Too many attempts.');
+   const body=await readJson(req,5000);const outcome=await signing.sign(signMatch[1],body,req);
+   if(!outcome.ok)return problem(res,outcome.code,outcome.error);return json(res,200,outcome);
+ }
+ const signerPdf=p.match(/^\/api\/agreements\/([a-f0-9]{64})\/pdf$/);
+ if(req.method==='GET'&&signerPdf){const f=signing.getPdfForSigner(signerPdf[1]);if(!f)return problem(res,404,'Signed PDF unavailable.');return serve(res,f,'application/pdf',true);}
+
  if(req.method==='POST'&&p==='/api/admin/login'){
    if(!throttle(req,'login',6,15*60_000))return problem(res,429,'Too many attempts.');
    if(!ADMIN_PASSWORD||!SESSION_SECRET)return problem(res,503,'Admin login is not configured.');
@@ -121,13 +134,22 @@ async function handle(req,res){
    const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
  }
  const detail=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})$/);
- if(req.method==='GET'&&detail){const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(detail[1]);if(!item)return problem(res,404,'Submission not found.');const photos=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=?').all(item.id);const events=db.prepare('SELECT event,created_at FROM admin_events WHERE submission_id=? ORDER BY id DESC').all(item.id);const mails=db.prepare('SELECT id,kind,state,attempts,last_error,created_at FROM mail_outbox WHERE submission_id=? ORDER BY created_at DESC').all(item.id);return json(res,200,{item,photos,events,mails});}
+ if(req.method==='GET'&&detail){const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(detail[1]);if(!item)return problem(res,404,'Submission not found.');const photos=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=?').all(item.id);const events=db.prepare('SELECT event,created_at FROM admin_events WHERE submission_id=? ORDER BY id DESC').all(item.id);const mails=db.prepare('SELECT id,kind,state,attempts,last_error,created_at FROM mail_outbox WHERE submission_id=? ORDER BY created_at DESC').all(item.id);return json(res,200,{item,photos,events,mails,agreement:signing.state(item.id),agreementConfigured:signing.enabled});}
+ const agreementPdfMatch=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/agreement\.pdf$/);
+ if(req.method==='GET'&&agreementPdfMatch){const f=signing.getPdfForAdmin(agreementPdfMatch[1]);if(!f)return problem(res,404,'Signed PDF not found.');return serve(res,f,'application/pdf',true);}
  const photoMatch=p.match(/^\/api\/admin\/photos\/([0-9a-f-]{36})$/);
  if(req.method==='GET'&&photoMatch){const f=db.prepare('SELECT filename,mime FROM photos WHERE id=?').get(photoMatch[1]);if(!f)return problem(res,404,'Image not found.');res.setHeader('Cache-Control','private, no-store');return serve(res,path.join(UPLOAD_DIR,path.basename(f.filename)),f.mime,true);}
  const update=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/update$/);
- if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));if(['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!verified)return problem(res,409,'Verify physical receipt before listing this item.');const notes=clean(b.adminNotes??old.admin_notes,3000),tracking=clean(b.tracking??old.tracking,130),sku=clean(b.sku??old.sku,90),bin=clean(b.binLocation??old.bin_location,90);const estimate=b.estimateDollars===''||b.estimateDollars==null?null:Math.round(Number(b.estimateDollars)*100);if(estimate!==null&&(!Number.isFinite(estimate)||estimate<0||estimate>10_000_000))return problem(res,400,'Invalid estimate.');db.prepare('UPDATE submissions SET status=?,admin_notes=?,tracking=?,sku=?,bin_location=?,received_verified=?,estimate_cents=?,updated_at=? WHERE id=?').run(status,notes,tracking,sku,bin,verified,estimate,now(),id);audit(id,`STATUS ${old.status} → ${status}`);
- if(status!==old.status&&['ACCEPTED','NEEDS_INFO','REJECTED'].includes(status)){
-  const messages={ACCEPTED:['Item preliminarily accepted','Our team has reviewed your item and it appears eligible for consignment. We will contact you with the proposed terms and shipping instructions. Please do not ship until you receive and accept those terms.'],NEEDS_INFO:['More information requested','We need a little more information to complete your assessment. Our team will contact you with the details.'],REJECTED:['Item assessment update','Thank you for submitting your item. We are unable to accept it for consignment at this time.']};
+ if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));
+ const previousAgreement=signing.state(id);
+ if(status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
+ if(status==='REJECTED'&&previousAgreement?.state==='SIGNED')return problem(res,409,'This item has a signed agreement; handle cancellation separately.');
+ if(['AWAITING_SHIPMENT','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&previousAgreement?.state!=='SIGNED')return problem(res,409,'A signed consignment agreement is required for this stage.');
+ if(['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!verified)return problem(res,409,'Verify physical receipt before listing this item.');const notes=clean(b.adminNotes??old.admin_notes,3000),tracking=clean(b.tracking??old.tracking,130),sku=clean(b.sku??old.sku,90),bin=clean(b.binLocation??old.bin_location,90);const estimate=b.estimateDollars===''||b.estimateDollars==null?null:Math.round(Number(b.estimateDollars)*100);if(estimate!==null&&(!Number.isFinite(estimate)||estimate<0||estimate>10_000_000))return problem(res,400,'Invalid estimate.');db.prepare('UPDATE submissions SET status=?,admin_notes=?,tracking=?,sku=?,bin_location=?,received_verified=?,estimate_cents=?,updated_at=? WHERE id=?').run(status,notes,tracking,sku,bin,verified,estimate,now(),id);audit(id,`STATUS ${old.status} → ${status}`);
+ if(status!==old.status&&status==='ACCEPTED'){signing.acceptance(old);await sendPending(id);}
+ if(status!==old.status&&status==='REJECTED')signing.rejection(old);
+ if(status!==old.status&&['NEEDS_INFO','REJECTED'].includes(status)){
+  const messages={NEEDS_INFO:['More information requested','We need a little more information to complete your assessment. Our team will contact you with the details.'],REJECTED:['Item assessment update','Thank you for submitting your item. We are unable to accept it for consignment at this time.']};
   const [subject,message]=messages[status];queueMail(id,`status_${status}`,old.email,`RESTYLE: ${subject} (${id})`,`<div style="font-family:Arial,sans-serif;max-width:580px;margin:auto;padding:24px"><h2>${htmlEscape(subject)}</h2><p>Hi ${htmlEscape(old.first_name)},</p><p>${htmlEscape(message)}</p><p>Reference: <b>${id}</b></p><p>RESTYLE Team</p></div>`);
   await sendPending(id);
  }
