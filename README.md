@@ -77,3 +77,15 @@ Use a **new RESTYLE GitHub repository and new Railway project**. Keep this total
 - The **hero image is cropped from the user-provided Figma screenshot** for visual fidelity; verify you have rights to the original image and template before publishing commercially. Replace with properly licensed product photography if needed.
 - This code is an independent implementation inspired by the screenshot, **not a live synchronization or direct edit of the user's Figma document**.
 - A separate contract, pricing structure, marketplace integration, and payout ledger should be added only after a validated pilot.
+
+## Transactional email + e-sign pilot flow
+
+1. The customer submits photos. RESTYLE queues a confirmation email and a staff alert (when `ADMIN_NOTIFY_EMAIL` is configured). Delivery requires `RESEND_API_KEY` and verified `EMAIL_FROM`. Email sends are tracked in the admin outbox; `SENT` means accepted by Resend, **not** guaranteed delivered.
+2. Wife selects **ACCEPTED**. If agreement settings are complete, RESTYLE creates a 14-day private signing link and queues an approval email. **No shipping address is revealed at this point.**
+3. Customer opens the emailed link, reads the immutable per-item terms snapshot, enters their full legal name and matching email, consents to electronic records, expressly signs and submits. RESTYLE stores signature evidence, timestamps, IP/user-agent, a SHA-256 terms digest and signed PDF **on the same persistent volume** as the submission.
+4. A signed-agreement confirmation and the separate shipping-instructions email are queued **after signing**, along with a staff notice. The admin submission detail offers an authenticated signed-PDF download. No physical shipment should be sent before receiving those instructions.
+5. REJECTED sends a different customer email and invalidates unsigned signing links. RECEIVED is recordable, but listing/selling states require both an agreement and verified physical receipt.
+
+Railway staging environment variables: `RESEND_API_KEY`, `EMAIL_FROM` (verified domain, e.g. `RESTYLE <reviews@your-domain.example>`), `ADMIN_NOTIFY_EMAIL`, `CONSIGNMENT_AGREEMENT_TEXT`, `CONSIGNMENT_SHIPPING_INSTRUCTIONS`, `AGREEMENT_PILOT_MODE=true` (test only). `AGREEMENT_LEGAL_APPROVED=true` is required outside pilot mode. **Do not use sample terms or fake shipping addresses with real customers.**
+
+The first-party typed e-sign pilot is **not** a replacement for counsel-reviewed consignment terms or a specialized e-signature provider's stronger identity verification/audit trail. The customer link establishes email-link possession, not independently verified identity. For legal production use, confirm Florida law, retention requirements, identity protections, secondhand-dealer obligations, and provide true shipping details and fees. Back up `/data` since signatures and image records live there. Review privacy practices before external launch.
