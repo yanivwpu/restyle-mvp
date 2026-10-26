@@ -103,6 +103,28 @@ test('Approval signing flow stores protected PDF and queues shipping only after 
  const noAccess=await fetch(base+`/api/admin/submissions/${id}/agreement.pdf`);assert.equal(noAccess.status,401);
  const second=await request(`/api/agreements/${token}`,{method:'POST',body:JSON.stringify({signerName:'Alex Reviewer',email:'alex@example.com',electronicConsent:true,agreeTerms:true,typedSignature:true})});assert.equal(second.r.status,409);
  const signedPdfCustomer=await fetch(base+`/api/agreements/${token}/pdf`);assert.equal(signedPdfCustomer.status,200);
+ // Staff listing-draft gate: signed alone is not enough until warehouse confirms possession.
+ const before=await request(`/api/admin/submissions/${id}/listing`);
+ assert.equal(before.r.status,200);assert.equal(before.data.publishingEnabled,false);assert.equal(before.data.aiAvailable,false);
+ assert.ok(before.data.gates.some(x=>x.includes('Warehouse')));
+ const blockedDraft=await request(`/api/admin/submissions/${id}/listing/generate`,{method:'POST',body:JSON.stringify({mode:'starter',confirmPhysicalFacts:true})});
+ assert.equal(blockedDraft.r.status,409);
+ const warehouse=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'RECEIVED',receivedVerified:true,sku:'RS-PRADA-1',binLocation:'B-1'})});
+ assert.equal(warehouse.r.status,200);
+ const draft=await request(`/api/admin/submissions/${id}/listing/generate`,{method:'POST',body:JSON.stringify({mode:'starter',confirmPhysicalFacts:true,size:'Medium',color:'Black',flaws:'Minor corner scuff'})});
+ assert.equal(draft.r.status,200,JSON.stringify(draft.data));assert.equal(draft.data.draft.source,'starter');
+ assert.match(draft.data.draft.title,/Prada/);assert.match(draft.data.draft.description,/Minor corner scuff/);
+ const aiUnavailable=await request(`/api/admin/submissions/${id}/listing/generate`,{method:'POST',body:JSON.stringify({mode:'ai',confirmPhysicalFacts:true})});
+ assert.equal(aiUnavailable.r.status,409);
+ const stillThere=await request(`/api/admin/submissions/${id}/listing`);
+ assert.equal(stillThere.data.draft.source,'starter');
+ const saved=await request(`/api/admin/submissions/${id}/listing/save`,{method:'POST',body:JSON.stringify({title:'Prada Black Leather Handbag Medium',description:stillThere.data.draft.description,categorySuggestion:'Handbags',categoryId:'169291',price:'290'})});
+ assert.equal(saved.r.status,200,JSON.stringify(saved.data));assert.equal(saved.data.draft.price_cents,29000);
+ const reviewed=await request(`/api/admin/submissions/${id}/listing/approve`,{method:'POST',body:'{}'});
+ assert.equal(reviewed.r.status,200,JSON.stringify(reviewed.data));assert.equal(reviewed.data.draft.status,'REVIEWED');assert.equal(reviewed.data.publishingEnabled,false);
+ const noPublish=await request(`/api/admin/submissions/${id}/listing/publish`,{method:'POST',body:'{}'});
+ assert.equal(noPublish.r.status,404,'No eBay publishing endpoint exists');
+ const unauthed=await fetch(base+`/api/admin/submissions/${id}/listing`);assert.equal(unauthed.status,401);
 });
 
 test('Rejection queues notification without agreement link and blocks unsigned listing',async()=>{
