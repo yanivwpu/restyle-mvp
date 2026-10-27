@@ -2,7 +2,7 @@
 
 [hidden]{display:none!important}
 
-/* RESTYLE desktop readability pass - optimized for 15-inch laptop screens */
+/* SHUKCHIC desktop readability pass - optimized for 15-inch laptop screens */
 @media (min-width:1101px){
   /* More useful horizontal space without stretching small-screen layouts */
   .container{max-width:1496px;padding-left:clamp(32px,2.8vw,44px);padding-right:clamp(32px,2.8vw,44px)}
