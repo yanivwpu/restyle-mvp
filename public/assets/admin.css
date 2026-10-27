@@ -43,3 +43,8 @@
 
 
 @media (min-width:1101px) and (max-width:1290px){.admin-main{padding:30px}.dashboard-grid{grid-template-columns:355px minmax(0,1fr);gap:16px}.detail-wrap{padding:24px}}
+
+/* SHUKCHIC logo scales within the private admin header. */
+.admin-header{min-height:96px;height:auto;padding-top:5px;padding-bottom:5px}
+.admin-header .brand-logo{width:145px}
+@media(max-width:700px){.admin-header .brand-logo{width:108px}.admin-header{min-height:80px;gap:10px;padding-left:12px;padding-right:12px}}
