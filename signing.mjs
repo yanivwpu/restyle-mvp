@@ -15,7 +15,7 @@ function pdfPage(lines){
 // Small self-contained, valid text PDF. Signed original text + structured evidence also stored separately.
 export function agreementPdf(lines){
   const pages=[];for(let i=0;i<lines.length;i+=50)pages.push(lines.slice(i,i+50));
-  if(!pages.length)pages.push(['RESTYLE signed agreement']);
+  if(!pages.length)pages.push(['SHUKCHIC signed agreement']);
   const objects=['', '<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
   const kids=[];
   for(const lines of pages){
@@ -37,7 +37,7 @@ const wrap=(value,n=89)=>{
   for(const word of words){if(!word)continue;if((line+' '+word).trim().length>n){if(line)lines.push(line);line=word;}else line=(line+' '+word).trim();}
   if(line)lines.push(line);return lines;
 };
-const mail=(title,content)=>`<div style="font:16px Arial,sans-serif;max-width:580px;margin:auto;color:#242225;line-height:1.65"><h1 style="font-size:26px">RESTYLE<span style="color:#ff8926">.</span></h1><h2>${safe(title)}</h2>${content}<p style="font-size:13px;color:#777">RESTYLE · Your pieces. Their next chapter.</p></div>`;
+const mail=(title,content)=>`<div style="font:16px Arial,sans-serif;max-width:580px;margin:auto;color:#242225;line-height:1.65"><img src="${safe((process.env.PUBLIC_BASE_URL||'').replace(/\/$/,'')+'/assets/shukchic-logo.svg')}" alt="SHUKCHIC Designer Resale" width="185" style="display:block;border:0;border-radius:8px;max-width:185px;height:auto"><p style="font:12px Georgia,serif;letter-spacing:.16em;color:#60452e">SHUKCHIC · DESIGNER RESALE</p><h2>${safe(title)}</h2>${content}<p style="font-size:13px;color:#777">SHUKCHIC · Your pieces. Their next chapter.</p></div>`;
 
 export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
   const folder=path.join(dir,'agreements');fs.mkdirSync(folder,{recursive:true,mode:0o700});
@@ -66,14 +66,14 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
     // Creates a one-time private signing link; the raw token appears only in the customer email.
     const token=crypto.randomBytes(32).toString('hex');
     const expires=new Date(Date.now()+14*24*3600_000).toISOString();
-    const snapshot=`RESTYLE CONSIGNMENT AGREEMENT\nSubmission: ${sub.id}\nItem: ${sub.brand} / ${sub.category}\nConsignor email: ${sub.email}\n\n${terms}\n\nPlease do not ship any item before the agreement is signed and shipping instructions are provided.`;
+    const snapshot=`SHUKCHIC CONSIGNMENT AGREEMENT\nSubmission: ${sub.id}\nItem: ${sub.brand} / ${sub.category}\nConsignor email: ${sub.email}\n\n${terms}\n\nPlease do not ship any item before the agreement is signed and shipping instructions are provided.`;
     db.prepare(`INSERT INTO consignment_agreements (submission_id, token_hash, token_expires_at, terms_snapshot, terms_sha256, created_at)
       VALUES (?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET token_hash=excluded.token_hash, token_expires_at=excluded.token_expires_at,
       terms_snapshot=excluded.terms_snapshot, terms_sha256=excluded.terms_sha256, state='PENDING', signer_name=NULL, signer_email=NULL,
       signed_at=NULL, signer_ip=NULL, signer_user_agent=NULL, signature_sha256=NULL, pdf_sha256=NULL, pdf_file=NULL, created_at=excluded.created_at`).run(sub.id,sha(token),expires,snapshot,sha(snapshot),date());
     const link=`${baseUrl}/sign/${token}`;
     const title=pilot?'Pilot item approved — test agreement':'Your item is approved — please sign the agreement';
-    queueMail(sub.id,'approval_sign',sub.email,`RESTYLE: ${title} (${sub.id})`,mail(title,`<p>Hi ${safe(sub.first_name)},</p><p>We've provisionally approved your item for the next step. Eligible items are prepared for resale on eBay through our designated seller account after receipt and inspection; RESTYLE is independent of eBay.</p><p>Before signing, please review the payout tiers, 90-day minimum consignment period, shipping and returns costs, and post-sale payment timing in your agreement. Your exact payout depends on the final selling price and eligible transaction expenses.</p><p><a href="${safe(link)}" style="display:inline-block;background:#ff8926;color:white;padding:13px 18px;border-radius:8px">Review and e-sign your agreement</a></p><p>This private link expires in 14 days. <strong>Do not ship anything yet.</strong> Shipping instructions will be emailed after the agreement is signed and accepted.</p><p>Reference: ${safe(sub.id)}</p>`));
+    queueMail(sub.id,'approval_sign',sub.email,`SHUKCHIC: ${title} (${sub.id})`,mail(title,`<p>Hi ${safe(sub.first_name)},</p><p>We've provisionally approved your item for the next step. Eligible items are prepared for resale on eBay through our designated seller account after receipt and inspection; SHUKCHIC is independent of eBay.</p><p>Before signing, please review the payout tiers, 90-day minimum consignment period, shipping and returns costs, and post-sale payment timing in your agreement. Your exact payout depends on the final selling price and eligible transaction expenses.</p><p><a href="${safe(link)}" style="display:inline-block;background:#ff8926;color:white;padding:13px 18px;border-radius:8px">Review and e-sign your agreement</a></p><p>This private link expires in 14 days. <strong>Do not ship anything yet.</strong> Shipping instructions will be emailed after the agreement is signed and accepted.</p><p>Reference: ${safe(sub.id)}</p>`));
     audit(sub.id,'AGREEMENT LINK ISSUED');
   }
   function rejection(sub){
@@ -93,7 +93,7 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
     const signedAt=date(); const ip=String(req.socket?.remoteAddress||'unavailable').slice(0,100);const ua=String(req.headers?.['user-agent']||'unavailable').slice(0,300);
     const evidence=JSON.stringify({submission:sub.id,signer,email,signedAt,ip,ua,termsSha256:record.terms_sha256,method:'typed-name + explicit e-sign consent + emailed private link'});
     const signatureHash=sha(evidence);
-    const lines=['RESTYLE - SIGNED CONSIGNMENT AGREEMENT','',...record.terms_snapshot.split('\n').flatMap(line=>line?wrap(line):['']),'','ELECTRONIC SIGNATURE / AUDIT','Signer: '+signer,'Email: '+email,'Signed at (UTC): '+signedAt,'Consented to electronic records and signatures: YES','Affirmatively accepted agreement terms: YES','Signature method: typed full legal name',`IP address: ${ip}`,`User agent: ${ua}`,`Terms SHA-256: ${record.terms_sha256}`,`Evidence SHA-256: ${signatureHash}`];
+    const lines=['SHUKCHIC - SIGNED CONSIGNMENT AGREEMENT','',...record.terms_snapshot.split('\n').flatMap(line=>line?wrap(line):['']),'','ELECTRONIC SIGNATURE / AUDIT','Signer: '+signer,'Email: '+email,'Signed at (UTC): '+signedAt,'Consented to electronic records and signatures: YES','Affirmatively accepted agreement terms: YES','Signature method: typed full legal name',`IP address: ${ip}`,`User agent: ${ua}`,`Terms SHA-256: ${record.terms_sha256}`,`Evidence SHA-256: ${signatureHash}`];
     const document=agreementPdf(lines);const file=`${sub.id}-${sha(signedAt).slice(0,10)}.pdf`;
     fs.writeFileSync(path.join(folder,file),document,{flag:'wx',mode:0o600});
     // One update wins for this item: refuse concurrent double signatures.
@@ -102,9 +102,9 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
     audit(sub.id,`AGREEMENT SIGNED ${record.terms_sha256.slice(0,12)}`);
     db.prepare("UPDATE submissions SET status='AWAITING_SHIPMENT', updated_at=? WHERE id=?").run(date(),sub.id);
     const summary=`<p>Hi ${safe(sub.first_name)},</p><p>Thank you. Your agreement is signed and stored with submission <strong>${safe(sub.id)}</strong>.</p>`;
-    queueMail(sub.id,'signed_receipt',sub.email,`RESTYLE: Signed agreement received (${sub.id})`,mail('Agreement signed',summary+'<p>A copy of the signed PDF is available from your private agreement link during its validity period.</p>'));
-    queueMail(sub.id,'shipping',sub.email,`RESTYLE: Shipping instructions (${sub.id})`,mail(pilot?'Pilot shipping instructions — DO NOT SHIP':'You can now send your approved item',summary+`<div style="padding:17px;background:#fff4e9;white-space:pre-wrap">${safe(shipping)}</div><p>Reference: ${safe(sub.id)}. Do not send additional unapproved items. Retain your shipment tracking.</p>`));
-    if(process.env.ADMIN_NOTIFY_EMAIL)queueMail(sub.id,'agreement_signed_admin',process.env.ADMIN_NOTIFY_EMAIL,`RESTYLE: Agreement signed (${sub.id})`,mail('Consignment agreement signed',`<p>${safe(signer)} has signed agreement ${safe(sub.id)}.</p><p>View their submission in the private staff dashboard.</p>`));
+    queueMail(sub.id,'signed_receipt',sub.email,`SHUKCHIC: Signed agreement received (${sub.id})`,mail('Agreement signed',summary+'<p>A copy of the signed PDF is available from your private agreement link during its validity period.</p>'));
+    queueMail(sub.id,'shipping',sub.email,`SHUKCHIC: Shipping instructions (${sub.id})`,mail(pilot?'Pilot shipping instructions — DO NOT SHIP':'You can now send your approved item',summary+`<div style="padding:17px;background:#fff4e9;white-space:pre-wrap">${safe(shipping)}</div><p>Reference: ${safe(sub.id)}. Do not send additional unapproved items. Retain your shipment tracking.</p>`));
+    if(process.env.ADMIN_NOTIFY_EMAIL)queueMail(sub.id,'agreement_signed_admin',process.env.ADMIN_NOTIFY_EMAIL,`SHUKCHIC: Agreement signed (${sub.id})`,mail('Consignment agreement signed',`<p>${safe(signer)} has signed agreement ${safe(sub.id)}.</p><p>View their submission in the private staff dashboard.</p>`));
     await sendPending(sub.id);
     return {code:200,ok:true,id:sub.id, pdfUrl:`/api/agreements/${token}/pdf`};
   }
