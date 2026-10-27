@@ -1,10 +1,10 @@
-# RESTYLE — Consignment intake MVP
+# SHUKCHIC — Designer Resale & Consignment MVP
 
-Independent, **working** mobile-first consignment lead intake and warehouse review application. Designed from the supplied RESTYLE Figma screenshot. Includes real image storage, SQLite records, authentication-protected admin dashboard, preliminary approvals, receipt verification gate, and transactional confirmation email integration.
+Independent, **working** mobile-first consignment lead intake and warehouse review application. Rebranded from RESTYLE using the approved SHUKCHIC artwork. Includes real image storage, SQLite records, authentication-protected admin dashboard, preliminary approvals, receipt verification gate, and transactional confirmation email integration.
 
 ## What's implemented
 
-- RESTYLE customer-facing landing page with phone-friendly styling. The top-right **Shop Now** button opens eBay listings for seller `ssammikat99u2` in a new tab; the hero and bottom **Upload Your Item for Review** buttons open `/submit`. Confirm the eBay seller URL and the store identity before public launch.
+- SHUKCHIC customer-facing landing page with phone-friendly styling. The top-right **Shop Now** button opens eBay listings for seller `ssammikat99u2` in a new tab; the hero and bottom **Upload Your Item for Review** buttons open `/submit`. Confirm the eBay seller URL and the store identity before public launch.
 - `/submit`: mobile camera/gallery upload, drag-and-drop, preview and removal; browser-side JPEG re-encoding to reduce filesize and strip normal EXIF metadata; up to six photos per item.
 - Data collection: category, brand, condition, description, first name, email, optional phone, ownership statement and consent; required validation, honeypot, per-IP rate limit.
 - **Durable local** SQLite data and private image files within `DATA_DIR`; do NOT deploy without a persistent storage volume.
@@ -63,7 +63,7 @@ Track implementation at [eBay AI Listing Engine issue #2](https://github.com/yan
 
    ```env
    RESEND_API_KEY=re_... # secret, never commit
-   EMAIL_FROM=RESTYLE <hello@yourverifieddomain.com>
+   EMAIL_FROM=SHUKCHIC <hello@yourverifieddomain.com>
    ADMIN_NOTIFY_EMAIL=you@yourdomain.com
    PUBLIC_BASE_URL=https://your-restyle-domain.com
    ```
@@ -73,7 +73,7 @@ Track implementation at [eBay AI Listing Engine issue #2](https://github.com/yan
 
 ## Deployment on Railway (recommended pilot route)
 
-Use a **new RESTYLE GitHub repository and new Railway project**. Keep this totally separate from WhachatCRM/Shopify systems.
+The existing GitHub repository and Railway project retain legacy RESTYLE identifiers; these are internal and should not be renamed without a migration plan. Keep this totally separate from WhachatCRM/Shopify systems.
 
 1. Push the extracted source into the new private GitHub repo.
 2. On Railway create a new project from this GitHub repo (Railway should detect the root `package.json`). Run `npm start`.
@@ -94,12 +94,16 @@ Use a **new RESTYLE GitHub repository and new Railway project**. Keep this total
 
 ## Transactional email + e-sign pilot flow
 
-1. The customer submits photos. RESTYLE queues a confirmation email and a staff alert (when `ADMIN_NOTIFY_EMAIL` is configured). Delivery requires `RESEND_API_KEY` and verified `EMAIL_FROM`. Email sends are tracked in the admin outbox; `SENT` means accepted by Resend, **not** guaranteed delivered.
-2. Wife selects **ACCEPTED**. If agreement settings are complete, RESTYLE creates a 14-day private signing link and queues an approval email. **No shipping address is revealed at this point.**
-3. Customer opens the emailed link, reads the immutable per-item terms snapshot, enters their full legal name and matching email, consents to electronic records, expressly signs and submits. RESTYLE stores signature evidence, timestamps, IP/user-agent, a SHA-256 terms digest and signed PDF **on the same persistent volume** as the submission.
+1. The customer submits photos. SHUKCHIC queues a confirmation email and a staff alert (when `ADMIN_NOTIFY_EMAIL` is configured). Delivery requires `RESEND_API_KEY` and verified `EMAIL_FROM`. Email sends are tracked in the admin outbox; `SENT` means accepted by Resend, **not** guaranteed delivered.
+2. Wife selects **ACCEPTED**. If agreement settings are complete, SHUKCHIC creates a 14-day private signing link and queues an approval email. **No shipping address is revealed at this point.**
+3. Customer opens the emailed link, reads the immutable per-item terms snapshot, enters their full legal name and matching email, consents to electronic records, expressly signs and submits. SHUKCHIC stores signature evidence, timestamps, IP/user-agent, a SHA-256 terms digest and signed PDF **on the same persistent volume** as the submission.
 4. A signed-agreement confirmation and the separate shipping-instructions email are queued **after signing**, along with a staff notice. The admin submission detail offers an authenticated signed-PDF download. No physical shipment should be sent before receiving those instructions.
 5. REJECTED sends a different customer email and invalidates unsigned signing links. RECEIVED is recordable, but listing/selling states require both an agreement and verified physical receipt.
 
-Railway staging environment variables: `RESEND_API_KEY`, `EMAIL_FROM` (verified domain, e.g. `RESTYLE <reviews@your-domain.example>`), `ADMIN_NOTIFY_EMAIL`, `CONSIGNMENT_AGREEMENT_TEXT`, `CONSIGNMENT_SHIPPING_INSTRUCTIONS`, `AGREEMENT_PILOT_MODE=true` (test only). `AGREEMENT_LEGAL_APPROVED=true` is required outside pilot mode. **Do not use sample terms or fake shipping addresses with real customers.**
+Railway staging environment variables: `RESEND_API_KEY`, `EMAIL_FROM` (verified domain, e.g. `SHUKCHIC <reviews@your-domain.example>`), `ADMIN_NOTIFY_EMAIL`, `CONSIGNMENT_AGREEMENT_TEXT`, `CONSIGNMENT_SHIPPING_INSTRUCTIONS`, `AGREEMENT_PILOT_MODE=true` (test only). `AGREEMENT_LEGAL_APPROVED=true` is required outside pilot mode. **Do not use sample terms or fake shipping addresses with real customers.**
 
 The first-party typed e-sign pilot is **not** a replacement for counsel-reviewed consignment terms or a specialized e-signature provider's stronger identity verification/audit trail. The customer link establishes email-link possession, not independently verified identity. For legal production use, confirm Florida law, retention requirements, identity protections, secondhand-dealer obligations, and provide true shipping details and fees. Back up `/data` since signatures and image records live there. Review privacy practices before external launch.
+
+## SHUKCHIC branding migration
+
+The storefront and new transactional templates use the user-approved pink handbag SHUKCHIC logo. The public routes, staff workspace and e-sign screens display SHUKCHIC. Historical submission IDs, database filenames, deployment identifiers, stored audit records and already-signed agreement snapshots intentionally retain legacy identifiers/contents. The domain remains the temporary Railway staging URL; do not assume shukchic.com is registered. No sending-domain or eBay production connection is automatically activated by the rebrand.
