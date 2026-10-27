@@ -65,9 +65,9 @@
 
 /* SHUKCHIC approved full-logo image; use an actual image instead of a substituted typeface. */
 .brand{display:inline-flex;align-items:center;flex:none;line-height:1;min-width:0}
-.brand-logo{display:block;width:156px;height:auto;aspect-ratio:478 / 261;max-width:100%;border-radius:8px}
+.brand-logo{display:block;width:156px;height:auto;aspect-ratio:478 / 261;max-width:100%;border-radius:0;background:transparent}
 .footer .brand-logo{width:194px;max-width:100%}
 .site-header{background:#fffaf8}
 .nav{min-height:98px;height:auto;padding-top:5px;padding-bottom:5px}
 @media (max-width:800px){.nav .brand-logo{width:126px}.footer .brand-logo{width:155px}}
-@media (max-width:480px){.nav .brand-logo{width:109px}.nav{min-height:80px}.brand-logo{border-radius:6px}}
+@media (max-width:480px){.nav .brand-logo{width:109px}.nav{min-height:80px}.brand-logo{border-radius:0}}
