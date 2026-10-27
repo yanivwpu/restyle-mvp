@@ -65,10 +65,10 @@
 
 /* SHUKCHIC approved full-logo image; use an actual image instead of a substituted typeface. */
 .brand{display:inline-flex;align-items:center;flex:none;line-height:1;min-width:0}
-.brand-logo{display:block;width:258px;height:auto;aspect-ratio:980 / 205;max-width:100%;border:0;border-radius:0;background:transparent}
-.footer .brand-logo{width:260px;max-width:100%}
+.brand-logo{display:block;width:206px;height:auto;aspect-ratio:980 / 205;max-width:100%;border:0;border-radius:0;background:transparent}
+.footer .brand-logo{width:208px;max-width:100%}
 .site-header{background:#fffaf8}
 .nav{min-height:98px;height:auto;padding-top:5px;padding-bottom:5px}
-@media (max-width:800px){.nav .brand-logo{width:194px}.footer .brand-logo{width:220px}}
-@media (min-width:801px) and (max-width:1100px){.nav .brand-logo{width:210px}.nav{gap:13px}.nav-links{gap:12px}.nav-links a{font-size:12px}.header-cta{font-size:12px!important;padding:11px 13px}}
-@media (max-width:480px){.nav .brand-logo{width:158px}.nav{min-height:80px}.brand-logo{border-radius:0}}
+@media (max-width:800px){.nav .brand-logo{width:155px}.footer .brand-logo{width:176px}}
+@media (min-width:801px) and (max-width:1100px){.nav .brand-logo{width:168px}.nav{gap:13px}.nav-links{gap:12px}.nav-links a{font-size:12px}.header-cta{font-size:12px!important;padding:11px 13px}}
+@media (max-width:480px){.nav .brand-logo{width:126px}.nav{min-height:80px}.brand-logo{border-radius:0}}
