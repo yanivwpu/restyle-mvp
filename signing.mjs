@@ -37,7 +37,7 @@ const wrap=(value,n=89)=>{
   for(const word of words){if(!word)continue;if((line+' '+word).trim().length>n){if(line)lines.push(line);line=word;}else line=(line+' '+word).trim();}
   if(line)lines.push(line);return lines;
 };
-const mail=(title,content)=>`<div style="font:16px Arial,sans-serif;max-width:580px;margin:auto;color:#242225;line-height:1.65"><img src="${safe((process.env.PUBLIC_BASE_URL||'').replace(/\/$/,'')+'/assets/shukchic-logo.svg?v=20261027')}" alt="SHUKCHIC Designer Resale" width="185" style="display:block;border:0;border-radius:8px;max-width:185px;height:auto"><p style="font:12px Georgia,serif;letter-spacing:.16em;color:#60452e">SHUKCHIC · DESIGNER RESALE</p><h2>${safe(title)}</h2>${content}<p style="font-size:13px;color:#777">SHUKCHIC · Your pieces. Their next chapter.</p></div>`;
+const mail=(title,content)=>`<div style="font:16px Arial,sans-serif;max-width:580px;margin:auto;color:#242225;line-height:1.65"><img src="${safe((process.env.PUBLIC_BASE_URL||'').replace(/\/$/,'')+'/assets/shukchic-logo.svg?v=20261027-black80')}" alt="SHUKCHIC Designer Resale" width="185" style="display:block;border:0;border-radius:8px;max-width:185px;height:auto"><p style="font:12px Georgia,serif;letter-spacing:.16em;color:#60452e">SHUKCHIC · DESIGNER RESALE</p><h2>${safe(title)}</h2>${content}<p style="font-size:13px;color:#777">SHUKCHIC · Your pieces. Their next chapter.</p></div>`;
 
 export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
   const folder=path.join(dir,'agreements');fs.mkdirSync(folder,{recursive:true,mode:0o700});
