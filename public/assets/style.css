@@ -70,4 +70,5 @@
 .site-header{background:#fffaf8}
 .nav{min-height:98px;height:auto;padding-top:5px;padding-bottom:5px}
 @media (max-width:800px){.nav .brand-logo{width:194px}.footer .brand-logo{width:220px}}
+@media (min-width:801px) and (max-width:1100px){.nav .brand-logo{width:210px}.nav{gap:13px}.nav-links{gap:12px}.nav-links a{font-size:12px}.header-cta{font-size:12px!important;padding:11px 13px}}
 @media (max-width:480px){.nav .brand-logo{width:158px}.nav{min-height:80px}.brand-logo{border-radius:0}}
