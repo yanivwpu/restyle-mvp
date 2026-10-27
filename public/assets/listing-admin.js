@@ -8,7 +8,7 @@
   document.querySelector('#restyleListing')?.remove();
   const div=document.createElement('section');div.id='restyleListing';div.className='detail-editor';
   const d=state.draft,gates=state.gates||[],facts=d?.verifiedFacts||{};
-  let html='<h3>eBay Listing Assistant <span class="pilot-tag">DRAFTS ONLY</span></h3><p>Create and edit listing text inside RESTYLE. This workspace does not connect or publish to eBay yet.</p>';
+  let html='<h3>eBay Listing Assistant <span class="pilot-tag">DRAFTS ONLY</span></h3><p>Create and edit listing text inside SHUKCHIC. This workspace does not connect or publish to eBay yet.</p>';
   if(gates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(gates.join(' · '))+'</p>';
   else html+='<p class="save-notice">Warehouse and agreement checks passed. Verify item facts below before generating.</p>';
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
@@ -34,7 +34,7 @@
    feedback.textContent='Processing…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
    const data=await result.json();if(!result.ok)throw Error(data.error||'Unable to complete listing action.');
-   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Saved in RESTYLE. Nothing has been published on eBay.';
+   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Saved in SHUKCHIC. Nothing has been published on eBay.';
   }
   div.querySelector('#listingGenerate').addEventListener('submit',async event=>{
    event.preventDefault();
