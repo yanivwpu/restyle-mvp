@@ -1,6 +1,6 @@
 // Internal consignment settlement ledger. No funds transfer functionality.
 const fail=(message,status=400)=>Object.assign(new Error(message),{status});
-const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
+const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
 function cents(value,label){
  const s=String(value??'').trim();
  if(!/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(s))throw fail(label+' must be a nonnegative dollar amount with at most two decimals.');
