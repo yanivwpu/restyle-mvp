@@ -8,9 +8,9 @@
   const anchor=document.querySelector('#restyleListing')||document.querySelector('#editForm');if(!anchor)return;
   const node=document.createElement('section');node.className='detail-editor';node.id='restyleSettlement';
   const d=s?.record||{};
-  let html='<h3>Consignor payout ledger <span class="pilot-tag">NO AUTOMATIC TRANSFERS</span></h3><p class="detail-meta">Record the actual sale and eBay charges. SHUKCHIC calculates the consignor share and blocks early payments, refunds and open disputes.</p>';
+  let html='<h3>Consignor payout ledger <span class="pilot-tag">NO AUTOMATIC TRANSFERS</span></h3><p class="detail-meta">SHUKCHIC will import eBay sale prices, fees, label charges and refunds after the seller account is connected. Manual entry below is only a temporary fallback for the pilot or incomplete eBay data.</p>';
   if(s?.pilot)html+='<p class="detail-meta"><strong>Pilot mode:</strong> This is a settlement preview. External payment recording is disabled until the business launches.</p>';
-  html+='<form id="settlementEdit"><div class="editor-grid">';
+  html+='<details class="settlement-manual"><summary>Manual entry — only when eBay data is unavailable</summary><form id="settlementEdit"><div class="editor-grid">';
   html+=label('Final sale price ($)','salePrice',d.sale_price_cents==null?'':dollars(d.sale_price_cents));
   html+=label('Marketplace/payment fees ($)','marketplaceFee',dollars(d.marketplace_fee_cents));
   html+=label('Outbound shipment / insurance ($)','outboundShipping',dollars(d.outbound_shipping_cents));
@@ -21,7 +21,7 @@
   html+='<label>Return/dispute status<select name="caseStatus">'+['CLEAR','OPEN','RESOLVED','REFUNDED'].map(v=>'<option value="'+v+'" '+((d.case_status||'CLEAR')===v?'selected':'')+'>'+esc({CLEAR:'No unresolved case',OPEN:'Open return or dispute',RESOLVED:'Case resolved',REFUNDED:'Sale fully refunded'}[v])+'</option>').join('')+'</select></label>';
   html+='<label class="verified-row"><input type="checkbox" name="fundsCleared" '+(d.funds_cleared?'checked':'')+'> Marketplace funds received and cleared</label>';
   html+='<label class="span-all">Internal notes<textarea name="note" rows="2" maxlength="1000">'+esc(d.note||'')+'</textarea></label>';
-  html+='</div><div class="editor-actions"><button class="btn btn-primary" type="submit" '+(d.paid_at?'disabled':'')+'>Save settlement details</button><p>Saving does not release any funds or notify the customer.</p></div></form>';
+  html+='</div><div class="editor-actions"><button class="btn btn-primary" type="submit" '+(d.paid_at?'disabled':'')+'>Save settlement details</button><p>Saving does not release any funds or notify the customer.</p></div></form></details>';
   if(s?.record){
    html+='<div class="detail-meta" style="margin-top:14px"><strong>Sale: $'+dollars(d.sale_price_cents)+'</strong> · Deductions: $'+dollars(s.deductions_cents)+' · Net: $'+dollars(s.net_cents)+'</div>';
    html+='<div class="detail-meta"><strong>Consignor: '+s.split_percent+'% = $'+dollars(s.consignor_cents)+'</strong> · SHUKCHIC: '+s.restyle_percent+'% = $'+dollars(s.restyle_cents)+'</div>';
