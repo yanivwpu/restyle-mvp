@@ -9,6 +9,7 @@ import { createListingDrafts } from './listing-drafts.mjs';
 import { createSettlements } from './settlements.mjs';
 import { sampleOrderPreview } from './ebay-reconciliation.mjs';
 import { createEbayDeletionListener } from './ebay-deletion.mjs';
+import { createEbayOAuth } from './ebay-oauth.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -89,6 +90,7 @@ const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,s
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
+const ebayOAuth=createEbayOAuth({db});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
@@ -102,16 +104,26 @@ async function handle(req,res){
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
  const url=new URL(req.url||'/',`http://${req.headers.host||'localhost'}`);const p=url.pathname;
  if(req.method==='GET'&&p==='/assets/shukchic-email-logo.png'){res.writeHead(200,{'Content-Type':'image/png','Content-Length':emailLogoPng.length,'Cache-Control':'public, max-age=604800'});return res.end(emailLogoPng);}
- // Stable eBay RuName landing pages; authorization intentionally disabled.
- // Do not process authorization codes, connect accounts or store tokens until
- // verified CSRF protection and encrypted OAuth storage are implemented.
+ // OAuth consent returns from eBay without the SameSite=Strict staff session.
+ // One-use 256-bit state, persisted on our server, authenticates the callback.
+ // No authorization code is logged, stored, reflected, or placed in the result URL.
  if(req.method==='GET'&&p==='/api/ebay/oauth/callback'){
-   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
-   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC - eBay connection pending</title><body style="font:16px Arial,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#242225"><h1>eBay authorization is not enabled yet</h1><p>SHUKCHIC has registered its callback, but secure seller authorization is not yet active. No eBay account was connected.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
+   let message='The eBay connection was not completed.';
+   let good=false;
+   try{
+     const result=await ebayOAuth.complete({
+       state:url.searchParams.get('state'),
+       code:url.searchParams.get('code'),
+       error:url.searchParams.get('error')
+     });
+     good=true;message='The authorized seller '+result.sellerUsername+' is now linked to SHUKCHIC. Return to Admin to review the connection.';
+   }catch(err){message=err.status===503?'SHUKCHIC eBay authorization is not configured yet. No account was connected.':err.message;}
+   res.writeHead(good?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
+   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC — eBay authorization</title><body style="font:16px Arial,sans-serif;max-width:650px;margin:12vh auto;padding:24px;color:#242225"><h1>'+ (good?'eBay seller connected':'eBay connection not completed') +'</h1><p>'+htmlEscape(message)+'</p><p>No listings were published and no sales were imported.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
  }
  if(req.method==='GET'&&p==='/api/ebay/oauth/declined'){
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
-   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC - eBay authorization declined</title><body style="font:16px Arial,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#242225"><h1>eBay authorization was not completed</h1><p>Nothing was connected to SHUKCHIC.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
+   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>SHUKCHIC — authorization declined</title><h1>eBay authorization was declined</h1><p>Nothing was connected to SHUKCHIC.</p><a href="/admin">Return to Admin</a></html>');
  }
  // eBay Marketplace Account Deletion compliance endpoint, distinct from OAuth.
  if(p==='/api/ebay/account-deletion'){
@@ -132,8 +144,20 @@ async function handle(req,res){
  // Seller OAuth consent and encrypted refresh token storage must be completed before sync begins.
  if(req.method==='GET'&&p==='/api/admin/ebay/status'){
   if(!admin(req))return problem(res,401,'Admin login required.');
-  const developerConfigured=Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET&&process.env.EBAY_RUNAME);
-  return json(res,200,{provider:'eBay',seller:'ssammikat99u2',accountDeletion:ebayDeletion.summary(),developerConfigured,sellerConnected:false,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+  const oauth=ebayOAuth.status();
+  const developerConfigured=oauth.configured;
+  return json(res,200,{provider:'eBay',seller:'ssammikat99u2',accountDeletion:ebayDeletion.summary(),developerConfigured,sellerConnected:oauth.connected,sellerUsername:oauth.sellerUsername,oauth,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+ }
+ // All authorization management is admin-only and POST-only. No live eBay
+ // sale imports, listing writes or payouts are enabled by this connection.
+ if(req.method==='POST'&&p.startsWith('/api/admin/ebay/oauth/')){
+   if(!admin(req))return problem(res,401,'Admin login required.');
+   if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+   if(!throttle(req,'ebay-oauth',18,15*60_000))return problem(res,429,'Too many OAuth attempts. Try again shortly.');
+   if(p==='/api/admin/ebay/oauth/start')return json(res,200,ebayOAuth.start());
+   if(p==='/api/admin/ebay/oauth/refresh')return json(res,200,await ebayOAuth.refresh());
+   if(p==='/api/admin/ebay/oauth/disconnect')return json(res,200,ebayOAuth.disconnect());
+   return problem(res,404,'Unknown OAuth action.');
  }
  // Preview uses a synthetic fixture only: no eBay calls, no stored money or inventory changes.
  if(req.method==='GET'&&p==='/api/admin/ebay/sample'){
