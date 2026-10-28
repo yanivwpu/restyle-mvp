@@ -97,6 +97,16 @@ test('encrypted refresh token can be renewed without rotating durable token or l
  assert.equal(oauth.status().connected,false);
  db.close();
 });
+test('internal access token automatically renews only when close to expiry',async()=>{
+ const {db,oauth,advance,posts}=setup();
+ await oauth.complete({state:state(oauth.start()),code:'ebay-one-use-code-123456789'});
+ assert.equal(await oauth.getAccessToken(),access);
+ assert.equal(posts.length,1,'No early refresh while access token is valid');
+ advance(7200*1000-30000);
+ assert.equal(await oauth.getAccessToken(),'refreshed-access-token-123456789');
+ assert.equal(posts.length,2);
+ db.close();
+});
 test('cannot connect when eBay identity API fails; state is consumed',async()=>{
  const {db,oauth}=setup({failIdentity:true});
  const nonce=state(oauth.start());
