@@ -23,14 +23,15 @@ export function createEbayDeletionListener({db,token=process.env.EBAY_DELETION_V
     if(typeof id!=='string'||id.length<5||id.length>190||!/^[A-Za-z0-9._:-]+$/.test(id))throw bad('Invalid notification identifier.');
     const data=obj?.notification?.data;
     if(!data||typeof data!=='object'||(!data.userId&&!data.eiasToken&&!data.username))throw bad('Deletion identifier missing.');
-    // Save exact payload for later ECC validation. Never delete data based on unverified notification.
-    const when=new Date().toISOString();
-    db.prepare("INSERT OR IGNORE INTO ebay_deletion_notifications (notification_id,received_at,signature,signed_payload) VALUES (?,?,?,?)").run(id,when,signature,raw.toString('utf8'));
-    return {accepted:true}; // durable queue; deletion NOT completed
+    // eBay requires ECC signature verification AND actual deletion processing.
+    // Until both are implemented, fail closed so eBay retries instead of recording
+    // an acknowledgement for a request the service cannot yet fulfill.
+    // In particular never store an unverified identity or return 2xx here.
+    throw bad('eBay signature verification and deletion processing are not active.',503);
   }
   function summary(){
     const pending=db.prepare("SELECT count(*) AS n FROM ebay_deletion_notifications WHERE processing_state!='COMPLETE'").get().n;
-    return {configured,queuedForVerification:pending,signatureVerificationEnabled:false,ebayDataImportAllowed:false};
+    return {configured,queuedForVerification:pending,signatureVerificationEnabled:false,webhookAcknowledgementsEnabled:false,ebayDataImportAllowed:false};
   }
   return {challenge,receive,summary};
 }
