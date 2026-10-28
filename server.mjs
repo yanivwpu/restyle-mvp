@@ -8,6 +8,7 @@ import { createSigning } from './signing.mjs';
 import { createListingDrafts } from './listing-drafts.mjs';
 import { createSettlements } from './settlements.mjs';
 import { sampleOrderPreview } from './ebay-reconciliation.mjs';
+import { createEbayDeletionListener } from './ebay-deletion.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -87,6 +88,7 @@ async function sendPending(submissionId){const pending=db.prepare("SELECT * FROM
 const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,sendPending,audit:(id,event)=>audit(id,event)});
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
+const ebayDeletion=createEbayDeletionListener({db});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'index.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
@@ -111,6 +113,19 @@ async function handle(req,res){
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
    return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC - eBay authorization declined</title><body style="font:16px Arial,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#242225"><h1>eBay authorization was not completed</h1><p>Nothing was connected to SHUKCHIC.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
  }
+ // eBay Marketplace Account Deletion compliance endpoint, distinct from OAuth.
+ if(p==='/api/ebay/account-deletion'){
+  if(req.method==='GET'){
+   return json(res,200,ebayDeletion.challenge(url.searchParams.get('challenge_code')));
+  }
+  if(req.method==='POST'){
+   const chunks=[];let size=0;
+   for await(const part of req){size+=part.length;if(size>65536)return problem(res,413,'Notification too large.');chunks.push(part);}
+   ebayDeletion.receive({signature:req.headers['x-ebay-signature'],raw:Buffer.concat(chunks),contentType:req.headers['content-type']});
+   res.writeHead(202,{'Cache-Control':'no-store','Content-Length':'0'});return res.end();
+  }
+  return problem(res,405,'Method not allowed.');
+ }
  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'restyle-mvp'});
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  // Read-only eBay integration readiness; never treat API credentials as seller authorization.
@@ -118,7 +133,7 @@ async function handle(req,res){
  if(req.method==='GET'&&p==='/api/admin/ebay/status'){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const developerConfigured=Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET&&process.env.EBAY_RUNAME);
-  return json(res,200,{provider:'eBay',seller:'ssammikat99u2',developerConfigured,sellerConnected:false,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+  return json(res,200,{provider:'eBay',seller:'ssammikat99u2',accountDeletion:ebayDeletion.summary(),developerConfigured,sellerConnected:false,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
  }
  // Preview uses a synthetic fixture only: no eBay calls, no stored money or inventory changes.
  if(req.method==='GET'&&p==='/api/admin/ebay/sample'){
