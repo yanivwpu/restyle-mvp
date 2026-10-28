@@ -22,18 +22,15 @@ test('deletion verification requires valid token and HTTPS endpoint and never le
  }
  db.close();
 });
-test('notifications are acknowledged only after durable save, deduplicated, and never auto-deleted',()=>{
+test('unverified deletion notifications are rejected without queueing or false acknowledgement',()=>{
  const {db,listener}=setup();
  const payload=Buffer.from(JSON.stringify({metadata:{topic:'MARKETPLACE_ACCOUNT_DELETION',schemaVersion:'1.0'},notification:{notificationId:'notification-001',data:{userId:'seller-001'}}}));
  const signed=Buffer.from('some-signature-object').toString('base64');
- assert.deepEqual(listener.receive({signature:signed,raw:payload,contentType:'application/json'}),{accepted:true});
- listener.receive({signature:signed,raw:payload,contentType:'application/json'});
- assert.equal(listener.summary().queuedForVerification,1);
+ assert.throws(()=>listener.receive({signature:signed,raw:payload,contentType:'application/json'}),e=>e.status===503);
+ assert.equal(listener.summary().queuedForVerification,0);
+ assert.equal(listener.summary().webhookAcknowledgementsEnabled,false);
  assert.equal(listener.summary().signatureVerificationEnabled,false);
- const row=db.prepare('SELECT signature_state, processing_state, signed_payload FROM ebay_deletion_notifications').get();
- assert.equal(row.signature_state,'PENDING_VERIFICATION');
- assert.equal(row.processing_state,'BLOCKED_PENDING_VERIFICATION');
- assert.deepEqual(Buffer.from(row.signed_payload),payload);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM ebay_deletion_notifications').get().n,0);
  db.close();
 });
 test('malformed, unsigned and unsupported eBay deletion messages are rejected',()=>{
