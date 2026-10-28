@@ -15,7 +15,7 @@ const jpeg='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP///////////
 let session='';let submissionId='';let photoId='';
 async function pickPort(){return new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});}
 async function request(uri,options={}){const r=await fetch(base+uri,{...options,headers:{'Content-Type':'application/json',...(session?{Cookie:session}:{}),...options.headers}});const data=(r.headers.get('content-type')||'').includes('json')?await r.json():null;return {r,data};}
-before(async()=>{port=await pickPort();base=`http://127.0.0.1:${port}`;child=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,PORT:String(port),DATA_DIR:dir,ADMIN_PASSWORD:'test-password-do-not-use-2026',SESSION_SECRET:'test-secret-example-unsafe-not-for-use-anywhere-9090909090',PUBLIC_BASE_URL:base,COOKIE_SECURE:'false',RAILWAY_ENVIRONMENT_NAME:'staging',RESEND_API_KEY:'',EMAIL_FROM:'',OPENAI_API_KEY:'',EBAY_CLIENT_ID:'',EBAY_CLIENT_SECRET:'',EBAY_RUNAME:'',EBAY_DATA_ERASURE_KEY:'',EBAY_DELETION_VERIFICATION_TOKEN:'T'.repeat(48),EBAY_DELETION_ENDPOINT:'https://test.example/api/ebay/account-deletion',ADMIN_NOTIFY_EMAIL:'staff@example.com',AGREEMENT_PILOT_MODE:'true',CONSIGNMENT_AGREEMENT_TEXT:'PILOT NONBINDING TEST ONLY. Consignor retains ownership until completed sale. This draft is not for genuine customers and no goods may be shipped. No commission structure is finalized.',CONSIGNMENT_SHIPPING_INSTRUCTIONS:'PILOT MODE: DO NOT SHIP. No real receiving address is supplied.'},stdio:['ignore','pipe','pipe']});await new Promise((resolve,reject)=>{let n=0;const interval=setInterval(async()=>{try{const r=await fetch(base+'/api/health');if(r.ok){clearInterval(interval);resolve();}}catch{}if(++n>80){clearInterval(interval);reject(Error('Server failed to start'));}},75);});});
+before(async()=>{port=await pickPort();base=`http://127.0.0.1:${port}`;child=spawn(process.execPath,['server.mjs'],{cwd:project,env:{...process.env,PORT:String(port),DATA_DIR:dir,ADMIN_PASSWORD:'test-password-do-not-use-2026',SESSION_SECRET:'test-secret-example-unsafe-not-for-use-anywhere-9090909090',PUBLIC_BASE_URL:base,COOKIE_SECURE:'false',RAILWAY_ENVIRONMENT_NAME:'staging',RESEND_API_KEY:'',EMAIL_FROM:'',OPENAI_API_KEY:'',EBAY_CLIENT_ID:'',EBAY_CLIENT_SECRET:'',EBAY_RUNAME:'',EBAY_OAUTH_ENCRYPTION_KEY:'',EBAY_DATA_ERASURE_KEY:'',EBAY_DELETION_VERIFICATION_TOKEN:'T'.repeat(48),EBAY_DELETION_ENDPOINT:'https://test.example/api/ebay/account-deletion',ADMIN_NOTIFY_EMAIL:'staff@example.com',AGREEMENT_PILOT_MODE:'true',CONSIGNMENT_AGREEMENT_TEXT:'PILOT NONBINDING TEST ONLY. Consignor retains ownership until completed sale. This draft is not for genuine customers and no goods may be shipped. No commission structure is finalized.',CONSIGNMENT_SHIPPING_INSTRUCTIONS:'PILOT MODE: DO NOT SHIP. No real receiving address is supplied.'},stdio:['ignore','pipe','pipe']});await new Promise((resolve,reject)=>{let n=0;const interval=setInterval(async()=>{try{const r=await fetch(base+'/api/health');if(r.ok){clearInterval(interval);resolve();}}catch{}if(++n>80){clearInterval(interval);reject(Error('Server failed to start'));}},75);});});
 after(()=>{child?.kill('SIGTERM');rmSync(dir,{recursive:true,force:true});});
 test('Privacy URL serves a real SHUKCHIC policy for eBay consent',async()=>{
  const r=await fetch(base+'/privacy');assert.equal(r.status,200);
@@ -48,16 +48,18 @@ test('eBay deletion GET handles challenge but POST fails closed until compliance
  const row=db.prepare("SELECT COUNT(*) AS n FROM ebay_deletion_notifications WHERE notification_id='test-deletion-1'").get();
  db.close();assert.equal(row.n,0);
 });
-test('eBay redirect pages exist but never accept consent or store tokens in pilot',async()=>{
+test('eBay OAuth callback blocks unsolicited codes and prevents disclosure',async()=>{
  const accepted=await fetch(base+'/api/ebay/oauth/callback?state=ignored&code=SENSITIVE-TEST-CODE');
- assert.equal(accepted.status,200);
+ assert.equal(accepted.status,400);
  assert.equal(accepted.headers.get('cache-control'),'no-store');
  const response=await accepted.text();
- assert.match(response,/authorization is not enabled yet/);
+ assert.match(response,/eBay connection not completed/);
  assert.doesNotMatch(response,/SENSITIVE-TEST-CODE/);
  const declined=await fetch(base+'/api/ebay/oauth/declined');
  assert.equal(declined.status,200);
  assert.match(await declined.text(),/Nothing was connected/);
+ const oauthStart=await request('/api/admin/ebay/oauth/start',{method:'POST',body:'{}'});
+ assert.equal(oauthStart.r.status,401,'Unauthenticated visitors cannot create authorization requests.');
 });
 test('eBay sample order preview is staff-only, synthetic and cannot pay anyone',async()=>{
  const blocked=await fetch(base+'/api/admin/ebay/sample');assert.equal(blocked.status,401);
