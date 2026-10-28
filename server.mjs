@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createSigning } from './signing.mjs';
 import { createListingDrafts } from './listing-drafts.mjs';
+import { createSettlements } from './settlements.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -84,6 +85,7 @@ async function sendPending(submissionId){const pending=db.prepare("SELECT * FROM
  return{sent,configured:MAIL_ENABLED};}
 const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,sendPending,audit:(id,event)=>audit(id,event)});
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
+const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'index.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
@@ -142,6 +144,20 @@ async function handle(req,res){
    const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
  }
  // Authenticated listing-draft management only. No code path here publishes to eBay.
+ // Staff-only settlement ledger: no payout processor and no money movement.
+ const settlementRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/settlement(?:\/(save|record-payment))?$/);
+ if(settlementRoute){
+   const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(settlementRoute[1]);
+   if(!item)return problem(res,404,'Submission not found.');
+   const action=settlementRoute[2];
+   if(req.method==='GET'&&!action)return json(res,200,settlements.inspect(item));
+   if(req.method==='POST'&&action){
+     const payload=await readJson(req,5000);
+     if(action==='save')return json(res,200,settlements.save(item,payload));
+     if(action==='record-payment')return json(res,200,settlements.markExternallyPaid(item,payload));
+   }
+   return problem(res,405,'Method not allowed.');
+ }
  const listingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/listing(?:\/(generate|save|approve))?$/);
  if(listingRoute){
   const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(listingRoute[1]);
@@ -158,13 +174,13 @@ async function handle(req,res){
   return problem(res,405,'Method not allowed.');
  }
  const detail=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})$/);
- if(req.method==='GET'&&detail){const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(detail[1]);if(!item)return problem(res,404,'Submission not found.');const photos=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=?').all(item.id);const events=db.prepare('SELECT event,created_at FROM admin_events WHERE submission_id=? ORDER BY id DESC').all(item.id);const mails=db.prepare('SELECT id,kind,state,attempts,last_error,created_at FROM mail_outbox WHERE submission_id=? ORDER BY created_at DESC').all(item.id);return json(res,200,{item,photos,events,mails,agreement:signing.state(item.id),agreementConfigured:signing.enabled,listing:listingDrafts.inspect(item)});}
+ if(req.method==='GET'&&detail){const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(detail[1]);if(!item)return problem(res,404,'Submission not found.');const photos=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=?').all(item.id);const events=db.prepare('SELECT event,created_at FROM admin_events WHERE submission_id=? ORDER BY id DESC').all(item.id);const mails=db.prepare('SELECT id,kind,state,attempts,last_error,created_at FROM mail_outbox WHERE submission_id=? ORDER BY created_at DESC').all(item.id);return json(res,200,{item,photos,events,mails,agreement:signing.state(item.id),agreementConfigured:signing.enabled,listing:listingDrafts.inspect(item),settlement:settlements.inspect(item)});}
  const agreementPdfMatch=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/agreement\.pdf$/);
  if(req.method==='GET'&&agreementPdfMatch){const f=signing.getPdfForAdmin(agreementPdfMatch[1]);if(!f)return problem(res,404,'Signed PDF not found.');return serve(res,f,'application/pdf',true);}
  const photoMatch=p.match(/^\/api\/admin\/photos\/([0-9a-f-]{36})$/);
  if(req.method==='GET'&&photoMatch){const f=db.prepare('SELECT filename,mime FROM photos WHERE id=?').get(photoMatch[1]);if(!f)return problem(res,404,'Image not found.');res.setHeader('Cache-Control','private, no-store');return serve(res,path.join(UPLOAD_DIR,path.basename(f.filename)),f.mime,true);}
  const update=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/update$/);
- if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));
+ if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');if(status==='PAID'&&old.status!=='PAID')return problem(res,409,'Record payout through the 30-day settlement ledger; status cannot be changed directly.');if(old.status==='PAID'&&status!=='PAID')return problem(res,409,'Recorded payouts are immutable; resolve corrections separately.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));
  const previousAgreement=signing.state(id);
  if(status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
  if(status==='REJECTED'&&previousAgreement?.state==='SIGNED')return problem(res,409,'This item has a signed agreement; handle cancellation separately.');
