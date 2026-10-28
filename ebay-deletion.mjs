@@ -55,7 +55,7 @@ export function createEbayDeletionListener({
     removed+=db.prepare('DELETE FROM ebay_imported_orders WHERE buyer_user_id=? OR buyer_eias_token=? OR buyer_username=? OR seller_user_id=?').run(identity,identity,identity,identity).changes;
     removed+=db.prepare('DELETE FROM ebay_imported_profiles WHERE user_id=? OR eias_token=? OR username=?').run(identity,identity,identity).changes;
     // Revoke local access upon a verified eBay account deletion event.
-    removed+=db.prepare('DELETE FROM ebay_oauth_connection WHERE seller_user_id=? OR seller_username=?').run(identity,identity).changes;
+    if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ebay_oauth_connection'").get()) removed+=db.prepare('DELETE FROM ebay_oauth_connection WHERE seller_user_id=? OR seller_username=?').run(identity,identity).changes;
     db.prepare('INSERT OR IGNORE INTO ebay_deletion_tombstones (identity_fingerprint,deleted_at) VALUES (?,?)').run(fingerprint(identity),when);
    }
    // Store only a completion receipt, not the unencrypted webhook or user ID.
