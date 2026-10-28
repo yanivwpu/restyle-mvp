@@ -31,7 +31,7 @@ test('eBay deletion GET handles challenge but POST fails closed until compliance
  const output=await r.json();
  assert.equal(output.challengeResponse,crypto.createHash('sha256').update('verify123'+token+endpoint).digest('hex'));
  const bad=await fetch(base+'/api/ebay/account-deletion',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
- assert.equal(bad.status,412);
+ assert.equal(bad.status,503,'Without Production app credentials, notifications fail closed.');
  const body=JSON.stringify({metadata:{topic:'MARKETPLACE_ACCOUNT_DELETION'},notification:{notificationId:'test-deletion-1',data:{userId:'test-id'}}});
  const valid=await fetch(base+'/api/ebay/account-deletion',{method:'POST',headers:{'content-type':'application/json','x-ebay-signature':'c2lnbmF0dXJlLXRlc3Q='},body});
  assert.equal(valid.status,503);
