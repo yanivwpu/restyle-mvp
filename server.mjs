@@ -100,6 +100,17 @@ async function handle(req,res){
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
  const url=new URL(req.url||'/',`http://${req.headers.host||'localhost'}`);const p=url.pathname;
  if(req.method==='GET'&&p==='/assets/shukchic-email-logo.png'){res.writeHead(200,{'Content-Type':'image/png','Content-Length':emailLogoPng.length,'Cache-Control':'public, max-age=604800'});return res.end(emailLogoPng);}
+ // Stable eBay RuName landing pages; authorization intentionally disabled.
+ // Do not process authorization codes, connect accounts or store tokens until
+ // verified CSRF protection and encrypted OAuth storage are implemented.
+ if(req.method==='GET'&&p==='/api/ebay/oauth/callback'){
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
+   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC - eBay connection pending</title><body style="font:16px Arial,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#242225"><h1>eBay authorization is not enabled yet</h1><p>SHUKCHIC has registered its callback, but secure seller authorization is not yet active. No eBay account was connected.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
+ }
+ if(req.method==='GET'&&p==='/api/ebay/oauth/declined'){
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
+   return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC - eBay authorization declined</title><body style="font:16px Arial,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#242225"><h1>eBay authorization was not completed</h1><p>Nothing was connected to SHUKCHIC.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
+ }
  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'restyle-mvp'});
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  // Read-only eBay integration readiness; never treat API credentials as seller authorization.
