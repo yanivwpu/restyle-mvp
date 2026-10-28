@@ -9,7 +9,12 @@
   <small id="ebaySyncNote">Items without verified delivery or complete financial data will be flagged for review.</small>
   <details class="ebay-demo-box" id="ebayDemo"><summary>Preview automatic order matching (demo)</summary><p class="ebay-demo-result" id="ebayDemoResult">This preview uses sample data, not real orders or financial transactions.</p></details>
  </div>
- <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">Set up eBay connection</a>
+ <div class="ebay-sync-actions">
+  <button type="button" class="small-button" id="ebayConnectBtn" hidden>Connect eBay seller</button>
+  <button type="button" class="small-button" id="ebayRefreshBtn" hidden>Verify token refresh</button>
+  <button type="button" class="small-button" id="ebayDisconnectBtn" hidden>Disconnect</button>
+  <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">eBay developer settings</a>
+ </div>
 </section>
 <div class="dashboard-grid"><section class="item-panel"><div class="panel-toolbar"><input id="search" aria-label="Search submissions" placeholder="Search brand, customer, reference…"><select id="filter" aria-label="Filter status"><option value="">All statuses</option><option>SUBMITTED</option><option>NEEDS_INFO</option><option>ACCEPTED</option><option>AWAITING_SHIPMENT</option><option>RECEIVED</option><option>READY_TO_LIST</option><option>LISTED</option><option>SOLD</option><option>SHIPPED</option><option>PAID</option><option>REJECTED</option></select></div><div id="itemList" class="item-list"></div></section><section class="detail-panel" id="detailPanel"><div class="empty-state"><div>◎</div><h2>Select a submission</h2><p>Choose an item from the review queue to see its details and update its status.</p></div></section></div></section></main>
 </body></html>
