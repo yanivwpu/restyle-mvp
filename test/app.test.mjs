@@ -72,7 +72,7 @@ test('eBay automation status appears before any live seller connection',async()=
  const html=await page.text();
  assert.match(html,/eBay sales automation/);
  assert.match(html,/ebaySyncStatus/);
- assert.match(html,/Set up eBay connection/);
+ assert.match(html,/Connect eBay seller/);
  const unauth=await fetch(base+'/api/admin/ebay/status');
  assert.equal(unauth.status,401);
 });
