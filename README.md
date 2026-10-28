@@ -42,6 +42,24 @@ Requires **Node.js 22.13+** (includes the built-in `node:sqlite` module). No NPM
 
 **Tests:** `npm test` (uses Node's built-in test runner; no downloads). Tests cover saving a photo, email outbox pending, admin login, private images and physical receipt listing protection.
 
+## SHUKCHIC settlement ledger — staged October 27, 2026
+
+For manually recorded eBay sales, the private staff dashboard displays a **Consignor payout ledger** once an item has status `SOLD`, `SHIPPED` or `PAID`. It saves real sale price, marketplace fees, shipping/insurance, return and additional disclosed transaction costs, refunds, return/dispute state, confirmed buyer delivery date, cleared-funds status and internal notes. These figures must be manually verified until the official eBay order/return APIs are connected.
+
+Tier schedule based on **final gross sale value**, applied to **net sale proceeds**:
+
+| Final sale | Consignor payout | SHUKCHIC |
+| --- | --- | --- |
+| $100–$499.99 | 60% | 40% |
+| $500–$999.99 | 70% | 30% |
+| $1,000+ | 80% | 20% |
+
+Only positive net proceeds may become payable. The ledger imposes a minimum 30-day hold after confirmed buyer delivery, cleared funds, and no open return or dispute; refunded sales and unverified inventory are blocked. The standard item-status form cannot set `PAID` manually. The ledger's separate external-payment record action is **disabled in pilot mode** and never sends funds; eventual production use can record only transactions already completed through an external payment system, using an external reference.
+
+No eBay payment reconciliation, bank transfer execution or automated payout email is implemented. These require a verified marketplace connection, accounting review, approved legal terms and non-pilot deployment.
+
+Implementation tracker: [Issue #3](https://github.com/yanivwpu/restyle-mvp/issues/3).
+
 ## eBay listing assistant — staging foundation (October 2026)
 
 Inside **Admin → item detail**, staff can prepare an internal eBay listing draft after the customer's agreement is signed and the item's warehouse receipt, SKU and storage bin are verified.
