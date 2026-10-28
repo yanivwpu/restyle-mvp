@@ -22,7 +22,7 @@ test('Email-safe SHUKCHIC PNG renders for transactional email clients',async()=>
 test('Staging stays non-indexable while metadata describes eBay resale',async()=>{const r=await fetch(base+'/');assert.equal(r.headers.get('x-robots-tag'),'noindex, nofollow');const h=await r.text();assert.match(h,/<meta name="description"[^>]*eBay/);assert.match(h,/Where will my items be sold/);assert.match(h,/SHUKCHIC is an independent service/);assert.doesNotMatch(h,/meta name="keywords"/i);});
 test('Photo submission rejects missing photos',async()=>{const x=await request('/api/submissions',{method:'POST',body:JSON.stringify({firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',consent:true,ownerConfirmed:true,photos:[]})});assert.equal(x.r.status,400);});
 test('Creates real submission and email outbox without falsely claiming sent',async()=>{const b={firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',description:'Gently used handbag',consent:true,ownerConfirmed:true,photos:[{name:'test.jpg',data:jpeg}]};const x=await request('/api/submissions',{method:'POST',body:JSON.stringify(b)});assert.equal(x.r.status,201,JSON.stringify(x.data));assert.match(x.data.id,/^RS-[A-F0-9]{10}$/);assert.equal(x.data.emailStatus,'SETUP_REQUIRED');submissionId=x.data.id;const file=new DatabaseSync(path.join(dir,'restyle.sqlite'));const email=file.prepare("SELECT html FROM mail_outbox WHERE submission_id=? AND kind='confirmation'").get(submissionId);file.close();assert.match(email.html,/shukchic-email-logo\.png/);});
-test('eBay Marketplace Deletion GET validates eBay challenge and POST queues signed notification without deleting data',async()=>{
+test('eBay deletion GET handles challenge but POST fails closed until compliance implementation',async()=>{
  const crypto=await import('node:crypto');
  const token='T'.repeat(48),endpoint='https://test.example/api/ebay/account-deletion';
  const r=await fetch(base+'/api/ebay/account-deletion?challenge_code=verify123');
@@ -34,10 +34,10 @@ test('eBay Marketplace Deletion GET validates eBay challenge and POST queues sig
  assert.equal(bad.status,412);
  const body=JSON.stringify({metadata:{topic:'MARKETPLACE_ACCOUNT_DELETION'},notification:{notificationId:'test-deletion-1',data:{userId:'test-id'}}});
  const valid=await fetch(base+'/api/ebay/account-deletion',{method:'POST',headers:{'content-type':'application/json','x-ebay-signature':'c2lnbmF0dXJlLXRlc3Q='},body});
- assert.equal(valid.status,202);
+ assert.equal(valid.status,503);
  const db=new DatabaseSync(path.join(dir,'restyle.sqlite'));
- const row=db.prepare("SELECT signature_state, processing_state FROM ebay_deletion_notifications WHERE notification_id='test-deletion-1'").get();
- db.close();assert.equal(row.signature_state,'PENDING_VERIFICATION');assert.equal(row.processing_state,'BLOCKED_PENDING_VERIFICATION');
+ const row=db.prepare("SELECT COUNT(*) AS n FROM ebay_deletion_notifications WHERE notification_id='test-deletion-1'").get();
+ db.close();assert.equal(row.n,0);
 });
 test('eBay redirect pages exist but never accept consent or store tokens in pilot',async()=>{
  const accepted=await fetch(base+'/api/ebay/oauth/callback?state=ignored&code=SENSITIVE-TEST-CODE');
