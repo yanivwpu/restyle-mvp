@@ -50,13 +50,13 @@ export function createEbaySignatureVerifier({clientId=process.env.EBAY_CLIENT_ID
  async function verify(header,raw){
   if(!configured)throw fail('eBay app credentials required before signature verification.');
   if(!Buffer.isBuffer(raw)||raw.length===0||raw.length>65536)throw fail('Invalid signature payload.',413);
-  const {kid,signature}=envelope(header);
+  const {kid,signature,digest}=envelope(header);
   let body;try{body=JSON.parse(raw.toString('utf8'));}catch{throw fail('Invalid JSON payload.',400);}
   const key=await publicKey(kid);
   // Official SDK verifies JSON.stringify(parsed payload), not the raw body bytes.
   let valid=false;
   try{
-   const verifier=crypto.createVerify('sha1');
+   const verifier=crypto.createVerify(digest==='SHA256'?'sha256':'sha1');
    verifier.update(JSON.stringify(body));
    valid=verifier.verify(key,Buffer.from(signature,'base64'));
   }catch{throw fail('eBay ECC signature could not be validated.',412);}
