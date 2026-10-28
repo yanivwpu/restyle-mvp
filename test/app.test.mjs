@@ -22,6 +22,17 @@ test('Email-safe SHUKCHIC PNG renders for transactional email clients',async()=>
 test('Staging stays non-indexable while metadata describes eBay resale',async()=>{const r=await fetch(base+'/');assert.equal(r.headers.get('x-robots-tag'),'noindex, nofollow');const h=await r.text();assert.match(h,/<meta name="description"[^>]*eBay/);assert.match(h,/Where will my items be sold/);assert.match(h,/SHUKCHIC is an independent service/);assert.doesNotMatch(h,/meta name="keywords"/i);});
 test('Photo submission rejects missing photos',async()=>{const x=await request('/api/submissions',{method:'POST',body:JSON.stringify({firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',consent:true,ownerConfirmed:true,photos:[]})});assert.equal(x.r.status,400);});
 test('Creates real submission and email outbox without falsely claiming sent',async()=>{const b={firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',description:'Gently used handbag',consent:true,ownerConfirmed:true,photos:[{name:'test.jpg',data:jpeg}]};const x=await request('/api/submissions',{method:'POST',body:JSON.stringify(b)});assert.equal(x.r.status,201,JSON.stringify(x.data));assert.match(x.data.id,/^RS-[A-F0-9]{10}$/);assert.equal(x.data.emailStatus,'SETUP_REQUIRED');submissionId=x.data.id;const file=new DatabaseSync(path.join(dir,'restyle.sqlite'));const email=file.prepare("SELECT html FROM mail_outbox WHERE submission_id=? AND kind='confirmation'").get(submissionId);file.close();assert.match(email.html,/shukchic-email-logo\.png/);});
+test('eBay redirect pages exist but never accept consent or store tokens in pilot',async()=>{
+ const accepted=await fetch(base+'/api/ebay/oauth/callback?state=ignored&code=SENSITIVE-TEST-CODE');
+ assert.equal(accepted.status,200);
+ assert.equal(accepted.headers.get('cache-control'),'no-store');
+ const response=await accepted.text();
+ assert.match(response,/authorization is not enabled yet/);
+ assert.doesNotMatch(response,/SENSITIVE-TEST-CODE/);
+ const declined=await fetch(base+'/api/ebay/oauth/declined');
+ assert.equal(declined.status,200);
+ assert.match(await declined.text(),/Nothing was connected/);
+});
 test('eBay sample order preview is staff-only, synthetic and cannot pay anyone',async()=>{
  const blocked=await fetch(base+'/api/admin/ebay/sample');assert.equal(blocked.status,401);
  const page=await fetch(base+'/admin');const html=await page.text();
