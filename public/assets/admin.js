@@ -27,11 +27,11 @@ async function loadEbayStatus(){
    description.textContent='eBay application settings are present, but the seller account has not authorized access. No sales data is syncing.';
    note.textContent='Next: finish seller OAuth authorization and turn on verified read-only reconciliation.';
   }else{
-   description.textContent='Your wife will not need to enter selling prices and eBay charges manually after account sync is connected. First, register a developer app for the existing seller account.';
+   description.textContent='Developer registration has been submitted and is pending eBay approval. Once approved, create the API keys and authorize the existing seller account for automatic sales and fee reconciliation.';
    note.textContent='After authorization: automatic order prices, fees, eligible labels and refund reconciliation. Delivery exceptions will need review.';
   }
   link.href=info.developerUrl||'https://developer.ebay.com/my/keys';
-  link.textContent=info.developerConfigured?'Review eBay developer settings':'Set up eBay connection';
+  link.textContent=info.developerConfigured?'Review eBay developer settings':'Open developer dashboard';
  }catch(error){badge.textContent='Status unavailable';description.textContent='Could not verify eBay integration readiness.';note.textContent=error.message;}
 }
 async function refresh(){try{const r=await api('/api/admin/submissions');items=r.items;$('#count').textContent=`(${items.length})`;const review=items.filter(x=>['SUBMITTED','NEEDS_INFO'].includes(x.status)).length;const waiting=items.filter(x=>['ACCEPTED','AWAITING_SHIPMENT'].includes(x.status)).length;const onhand=items.filter(x=>['RECEIVED','READY_TO_LIST','LISTED'].includes(x.status)).length;$('#stats').innerHTML=[['Total submissions',items.length],['Needs review',review],['Awaiting inventory',waiting],['Warehouse / listing',onhand]].map(([t,v])=>`<div class="stat"><strong>${v}</strong><span>${t}</span></div>`).join('');drawList();if(!items.length){$('#detailPanel').innerHTML='<div class="empty-state"><div>◎</div><h2>Ready for the first item</h2><p>Upload a test item to see review, agreement signing, AI draft preparation and settlement tools. Nothing will be published to eBay.</p><a href="/submit" class="small-button">Upload a test item</a></div>';}else if(selected&&items.some(x=>x.id===selected))await showDetail(selected);}catch(e){$('#itemList').textContent='Unable to refresh: '+e.message;}}
