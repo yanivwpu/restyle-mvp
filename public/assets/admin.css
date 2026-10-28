@@ -48,3 +48,16 @@
 .admin-header{min-height:96px;height:auto;padding-top:5px;padding-bottom:5px}
 .admin-header .brand-logo{width:194px}
 @media(max-width:700px){.admin-header .brand-logo{width:128px}.admin-header{min-height:80px;gap:10px;padding-left:12px;padding-right:12px}}
+
+/* Connection readiness is always visible—even before the first consignment item. */
+.ebay-sync-card{display:flex;justify-content:space-between;align-items:center;gap:26px;padding:20px 26px;margin:0 0 26px;border:1px solid #efe1d3;background:#fff;border-radius:16px}
+.ebay-sync-copy{min-width:0;flex:1}
+.ebay-sync-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:17px;color:#242225}
+.ebay-sync-status{display:inline-flex;align-items:center;border-radius:999px;background:#fff1e4;color:#aa4a08;padding:5px 10px;font-size:11px;font-weight:800;letter-spacing:.03em}
+.ebay-sync-status.connected{background:#e5f5ec;color:#1c6845}
+.ebay-sync-card p{margin:9px 0 6px;color:#4e4848;font-size:14px;line-height:1.5}
+.ebay-sync-card small{display:block;color:#827b79;font-size:12px;line-height:1.5}
+.ebay-setup-link{flex:none;text-decoration:none;text-align:center;white-space:nowrap}
+.no-results a{display:inline-block;margin-top:12px;text-decoration:none}
+.empty-state a{display:inline-block;margin-top:14px;text-decoration:none}
+@media(max-width:760px){.ebay-sync-card{align-items:flex-start;flex-direction:column;gap:14px;padding:18px}.ebay-setup-link{align-self:flex-start}}
