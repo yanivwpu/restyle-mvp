@@ -121,7 +121,7 @@ async function handle(req,res){
   if(req.method==='POST'){
    const chunks=[];let size=0;
    for await(const part of req){size+=part.length;if(size>65536)return problem(res,413,'Notification too large.');chunks.push(part);}
-   ebayDeletion.receive({signature:req.headers['x-ebay-signature'],raw:Buffer.concat(chunks),contentType:req.headers['content-type']});
+   await ebayDeletion.receive({signature:req.headers['x-ebay-signature'],raw:Buffer.concat(chunks),contentType:req.headers['content-type']});
    res.writeHead(202,{'Cache-Control':'no-store','Content-Length':'0'});return res.end();
   }
   return problem(res,405,'Method not allowed.');
