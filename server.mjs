@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createSigning } from './signing.mjs';
 import { createListingDrafts } from './listing-drafts.mjs';
 import { createSettlements } from './settlements.mjs';
+import { sampleOrderPreview } from './ebay-reconciliation.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -107,6 +108,11 @@ async function handle(req,res){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const developerConfigured=Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET&&process.env.EBAY_RUNAME);
   return json(res,200,{provider:'eBay',seller:'ssammikat99u2',developerConfigured,sellerConnected:false,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+ }
+ // Preview uses a synthetic fixture only: no eBay calls, no stored money or inventory changes.
+ if(req.method==='GET'&&p==='/api/admin/ebay/sample'){
+   if(!admin(req))return problem(res,401,'Admin login required.');
+   return json(res,200,sampleOrderPreview());
  }
  if(req.method==='POST'&&!checkOrigin(req))return problem(res,403,'Invalid request origin.');
  // Private, expiring bearer URLs are sent only to the customer's submitted email.
