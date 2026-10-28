@@ -101,6 +101,13 @@ async function handle(req,res){
  if(req.method==='GET'&&p==='/assets/shukchic-email-logo.png'){res.writeHead(200,{'Content-Type':'image/png','Content-Length':emailLogoPng.length,'Cache-Control':'public, max-age=604800'});return res.end(emailLogoPng);}
  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'restyle-mvp'});
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
+ // Read-only eBay integration readiness; never treat API credentials as seller authorization.
+ // Seller OAuth consent and encrypted refresh token storage must be completed before sync begins.
+ if(req.method==='GET'&&p==='/api/admin/ebay/status'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  const developerConfigured=Boolean(process.env.EBAY_CLIENT_ID&&process.env.EBAY_CLIENT_SECRET&&process.env.EBAY_RUNAME);
+  return json(res,200,{provider:'eBay',seller:'ssammikat99u2',developerConfigured,sellerConnected:false,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+ }
  if(req.method==='POST'&&!checkOrigin(req))return problem(res,403,'Invalid request origin.');
  // Private, expiring bearer URLs are sent only to the customer's submitted email.
  const signMatch=p.match(/^\/api\/agreements\/([a-f0-9]{64})$/);
