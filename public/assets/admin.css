@@ -61,3 +61,5 @@
 .no-results a{display:inline-block;margin-top:12px;text-decoration:none}
 .empty-state a{display:inline-block;margin-top:14px;text-decoration:none}
 @media(max-width:760px){.ebay-sync-card{align-items:flex-start;flex-direction:column;gap:14px;padding:18px}.ebay-setup-link{align-self:flex-start}}
+
+.settlement-manual{border:1px solid #e8ddd5;border-radius:12px;background:#fffaf6;margin:15px 0;padding:13px 16px}.settlement-manual>summary{cursor:pointer;font-weight:750;color:#4a403a;font-size:14px}.settlement-manual[open]>summary{margin-bottom:14px}.settlement-manual form{margin-top:10px}
