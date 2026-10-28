@@ -137,10 +137,20 @@ export function createEbayOAuth({
    if(changed.changes!==1)throw fail(409,'eBay credentials changed during refresh. Retry.');
    return {refreshed:true,sellerUsername:old.seller_username};
  }
+ // Internal-only retrieval. Future read-only integrations can obtain a valid
+ // access token; the admin HTTP API never returns tokens or refresh secrets.
+ async function getAccessToken(){
+   requireConfig();
+   let row=readRow();if(!row)throw fail(409,'Connect the intended eBay seller first.');
+   if(row.access_expires_at<=clock()+60000){await refresh();row=readRow();}
+   const secrets=decrypt(row.token_cipher);
+   if(!tokenValid(secrets.accessToken))throw fail(503,'Stored eBay access token was invalid.');
+   return secrets.accessToken;
+ }
  function disconnect(){
    db.prepare('DELETE FROM ebay_oauth_connection WHERE id=1').run();
    db.prepare('DELETE FROM ebay_oauth_states').run();
    return {disconnected:true};
  }
- return {status,start,complete,refresh,disconnect};
+ return {status,start,complete,refresh,getAccessToken,disconnect};
 }
