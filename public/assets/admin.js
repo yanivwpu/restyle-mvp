@@ -21,24 +21,52 @@ $('#ebayDemo')?.addEventListener('toggle',async e=>{
 });
 async function loadEbayStatus(){
  const badge=$('#ebaySyncStatus'),description=$('#ebaySyncText'),note=$('#ebaySyncNote'),link=$('#ebaySetupLink');
+ const start=$('#ebayConnectBtn'),refresh=$('#ebayRefreshBtn'),disconnect=$('#ebayDisconnectBtn');
  try{
   const info=await api('/api/admin/ebay/status');
-  badge.textContent=info.sellerConnected?'Connected':'Not connected';
-  badge.classList.toggle('connected',!!info.sellerConnected);
-  if(info.sellerConnected&&info.syncEnabled){
-   description.textContent='eBay sales, charges and shipping data are synchronized automatically when available.';
-   note.textContent='Any missing delivery, label-cost or dispute information will appear in the exception queue.';
-  }else if(info.developerConfigured){
-   description.textContent='eBay application settings are present, but the seller account has not authorized access. No sales data is syncing.';
-   note.textContent='Next: finish seller OAuth authorization and turn on verified read-only reconciliation.';
+  const oauth=info.oauth||{};
+  start.hidden=!oauth.configured;
+  refresh.hidden=!oauth.connected;
+  disconnect.hidden=!oauth.connected;
+  link.hidden=!!oauth.configured;
+  badge.textContent=oauth.connected?'Seller connected':oauth.configured?'Ready to authorize':'Setup incomplete';
+  badge.classList.toggle('connected',!!oauth.connected);
+  if(oauth.connected){
+   description.textContent='Authorized seller: '+(oauth.sellerUsername||'unknown')+'. Token storage is encrypted; order sync and listing publication are still OFF.';
+   note.textContent='Use Verify token refresh to test renewing access without publishing or importing anything. Reauthorization is available using Connect.';
+  }else if(oauth.configured){
+   description.textContent='Production API credentials are configured. To connect the correct seller account, select Connect eBay seller here in the admin—not Test Sign-In in the developer portal.';
+   note.textContent='The connection uses a 10-minute single-use authorization state and verifies the seller identity before storing encrypted tokens.';
   }else{
-   description.textContent='Developer registration has been submitted and is pending approval. Once approved, create API keys and authorize the seller account for automatic sales and fee reconciliation.';
-   note.textContent='After authorization: automatic order prices, fees, eligible labels and refund reconciliation. Delivery exceptions will need review.';
+   description.textContent='To finish eBay OAuth, add the saved Production RuName to Railway as EBAY_RUNAME and a separate 32-byte base64url encryption key as EBAY_OAUTH_ENCRYPTION_KEY.';
+   note.textContent='Existing Production App ID and Client Secret are already configured. Do not copy their values into chat. No live seller data is connected.';
   }
-  link.href=info.developerUrl||'https://developer.ebay.com/my/keys';
-  link.textContent=info.developerConfigured?'Review eBay developer settings':'Open developer dashboard';
- }catch(error){badge.textContent='Status unavailable';description.textContent='Could not verify eBay integration readiness.';note.textContent=error.message;}
+ }catch(error){
+   badge.textContent='Status unavailable';description.textContent='Could not verify eBay authorization readiness.';
+   note.textContent=error.message;
+   start.hidden=refresh.hidden=disconnect.hidden=true;link.hidden=false;
+ }
 }
+$('#ebayConnectBtn')?.addEventListener('click',async()=>{
+ const btn=$('#ebayConnectBtn');btn.disabled=true;
+ try{
+  const result=await api('/api/admin/ebay/oauth/start',{method:'POST',body:'{}'});
+  const u=new URL(result.authorizationUrl);
+  if(u.origin!=='https://auth.ebay.com')throw Error('Invalid eBay authorization destination.');
+  window.location.assign(u.toString());
+ }catch(e){alert(e.message);btn.disabled=false;}
+});
+$('#ebayRefreshBtn')?.addEventListener('click',async()=>{
+ const b=$('#ebayRefreshBtn');b.disabled=true;
+ try{await api('/api/admin/ebay/oauth/refresh',{method:'POST',body:'{}'});await loadEbayStatus();alert('Seller access token refreshed. No listings or orders were changed.');}
+ catch(e){alert('Token refresh unsuccessful: '+e.message);}finally{b.disabled=false;}
+});
+$('#ebayDisconnectBtn')?.addEventListener('click',async()=>{
+ if(!confirm('Disconnect seller authorization from SHUKCHIC? No listing or transaction data will be changed on eBay.'))return;
+ const b=$('#ebayDisconnectBtn');b.disabled=true;
+ try{await api('/api/admin/ebay/oauth/disconnect',{method:'POST',body:'{}'});await loadEbayStatus();}
+ catch(e){alert(e.message);}finally{b.disabled=false;}
+});
 async function refresh(){try{const r=await api('/api/admin/submissions');items=r.items;$('#count').textContent=`(${items.length})`;const review=items.filter(x=>['SUBMITTED','NEEDS_INFO'].includes(x.status)).length;const waiting=items.filter(x=>['ACCEPTED','AWAITING_SHIPMENT'].includes(x.status)).length;const onhand=items.filter(x=>['RECEIVED','READY_TO_LIST','LISTED'].includes(x.status)).length;$('#stats').innerHTML=[['Total submissions',items.length],['Needs review',review],['Awaiting inventory',waiting],['Warehouse / listing',onhand]].map(([t,v])=>`<div class="stat"><strong>${v}</strong><span>${t}</span></div>`).join('');drawList();if(!items.length){$('#detailPanel').innerHTML='<div class="empty-state"><div>◎</div><h2>Ready for the first item</h2><p>Upload a test item to see review, agreement signing, AI draft preparation and settlement tools. Nothing will be published to eBay.</p><a href="/submit" class="small-button">Upload a test item</a></div>';}else if(selected&&items.some(x=>x.id===selected))await showDetail(selected);}catch(e){$('#itemList').textContent='Unable to refresh: '+e.message;}}
 function drawList(){const q=$('#search').value.toLowerCase(),filter=$('#filter').value;const matches=items.filter(x=>(!filter||x.status===filter)&&(!q||[x.brand,x.first_name,x.email,x.id].join(' ').toLowerCase().includes(q)));const list=$('#itemList');list.replaceChildren();if(matches.length===0){list.innerHTML=items.length===0?'<div class="no-results"><p>No submissions yet.</p><a href="/submit" class="small-button">Submit a test item</a></div>':'<p class="no-results">No submissions match your search.</p>';return;}matches.forEach(x=>{const row=document.createElement('button');row.type='button';row.className='item-row'+(x.id===selected?' selected':'');const thumb=x.photo_count?`<img class="item-thumbnail" src="/api/admin/photos/${esc(x.first_photo||'')}" alt=""/>`:'<span class="item-thumbnail"></span>'; // thumbnail ID retrieved through detail; placeholder until available
 row.innerHTML=`<div class="item-thumbnail" style="display:grid;place-items:center;font-size:25px;color:#e8a46e">◇</div><div class="item-copy"><strong>${esc(x.brand)} · ${esc(x.category)}</strong><small>${esc(x.first_name)} · ${new Date(x.created_at).toLocaleDateString()}</small><span class="badge-status ${x.status==='REJECTED'?'rejected':['LISTED','PAID','READY_TO_LIST'].includes(x.status)?'ready':''}">${label(x.status)}</span></div>`;row.addEventListener('click',()=>showDetail(x.id));list.append(row);});}
