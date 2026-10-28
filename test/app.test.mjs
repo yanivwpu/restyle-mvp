@@ -22,6 +22,11 @@ test('Email-safe SHUKCHIC PNG renders for transactional email clients',async()=>
 test('Staging stays non-indexable while metadata describes eBay resale',async()=>{const r=await fetch(base+'/');assert.equal(r.headers.get('x-robots-tag'),'noindex, nofollow');const h=await r.text();assert.match(h,/<meta name="description"[^>]*eBay/);assert.match(h,/Where will my items be sold/);assert.match(h,/SHUKCHIC is an independent service/);assert.doesNotMatch(h,/meta name="keywords"/i);});
 test('Photo submission rejects missing photos',async()=>{const x=await request('/api/submissions',{method:'POST',body:JSON.stringify({firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',consent:true,ownerConfirmed:true,photos:[]})});assert.equal(x.r.status,400);});
 test('Creates real submission and email outbox without falsely claiming sent',async()=>{const b={firstName:'Demo',email:'demo@example.com',brand:'Coach',category:'Handbags',condition:'Excellent',description:'Gently used handbag',consent:true,ownerConfirmed:true,photos:[{name:'test.jpg',data:jpeg}]};const x=await request('/api/submissions',{method:'POST',body:JSON.stringify(b)});assert.equal(x.r.status,201,JSON.stringify(x.data));assert.match(x.data.id,/^RS-[A-F0-9]{10}$/);assert.equal(x.data.emailStatus,'SETUP_REQUIRED');submissionId=x.data.id;const file=new DatabaseSync(path.join(dir,'restyle.sqlite'));const email=file.prepare("SELECT html FROM mail_outbox WHERE submission_id=? AND kind='confirmation'").get(submissionId);file.close();assert.match(email.html,/shukchic-email-logo\.png/);});
+test('eBay sample order preview is staff-only, synthetic and cannot pay anyone',async()=>{
+ const blocked=await fetch(base+'/api/admin/ebay/sample');assert.equal(blocked.status,401);
+ const page=await fetch(base+'/admin');const html=await page.text();
+ assert.match(html,/Preview automatic order matching \(demo\)/);
+});
 test('eBay automation status appears before any live seller connection',async()=>{
  const page=await fetch(base+'/admin');
  assert.equal(page.status,200);
@@ -34,6 +39,12 @@ test('eBay automation status appears before any live seller connection',async()=
 });
 test('Admin endpoints require authentication',async()=>{const x=await request('/api/admin/submissions');assert.equal(x.r.status,401);});
 test('Login obtains HttpOnly authenticated cookie',async()=>{const x=await request('/api/admin/login',{method:'POST',body:JSON.stringify({password:'test-password-do-not-use-2026'})});assert.equal(x.r.status,200);const c=x.r.headers.get('set-cookie')||'';assert.match(c,/HttpOnly/);session=c.split(';')[0];assert.equal((await request('/api/admin/session')).data.authenticated,true);});
+test('Authorized eBay preview is synthetic, holds all payouts and does not update submissions',async()=>{
+ const data=await request('/api/admin/ebay/sample');assert.equal(data.r.status,200);
+ assert.equal(data.data.demo,true);assert.equal(data.data.nonBinding,true);
+ assert.equal(data.data.salePriceCents,65000);
+ assert.ok(data.data.issues.includes('FINANCE_RECONCILIATION_REQUIRED'));
+});
 test('eBay readiness is honest: seller not connected, no sync and no publishing',async()=>{
  const result=await request('/api/admin/ebay/status');
  assert.equal(result.r.status,200);
