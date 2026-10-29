@@ -47,6 +47,14 @@ async function loadEbayStatus(){
    start.hidden=refresh.hidden=disconnect.hidden=true;link.hidden=false;
  }
 }
+$('#ebayProbeBtn')?.addEventListener('click',async()=>{
+ const btn=$('#ebayProbeBtn');btn.disabled=true;
+ try{
+  const result=await api('/api/admin/ebay/oauth/probe',{method:'POST',body:'{}'});
+  alert(result.reachable?'eBay Production API: reachable. Application credentials passed. Seller OAuth still needs completion.':'eBay API test failed: '+result.status);
+ }catch(err){alert('eBay API test failed: '+err.message);}
+ finally{btn.disabled=false;}
+});
 $('#ebayConnectBtn')?.addEventListener('click',async()=>{
  const btn=$('#ebayConnectBtn');btn.disabled=true;
  try{

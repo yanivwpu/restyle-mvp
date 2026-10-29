@@ -155,10 +155,19 @@ export function createEbayOAuth({
    if(!tokenValid(secrets.accessToken))throw fail(503,'Stored eBay access token was invalid.');
    return secrets.accessToken;
  }
+ async function probe(){
+   requireConfig();
+   try{
+     const response=await requestTokens({grant_type:'client_credentials',scope:'https://api.ebay.com/oauth/api_scope'});
+     return {reachable:tokenValid(response.access_token),status:'Application token request succeeded',sellerConnected:status().connected};
+   }catch(error){
+     return {reachable:false,status:error.message,sellerConnected:status().connected};
+   }
+ }
  function disconnect(){
    db.prepare('DELETE FROM ebay_oauth_connection WHERE id=1').run();
    db.prepare('DELETE FROM ebay_oauth_states').run();
    return {disconnected:true};
  }
- return {status,start,complete,refresh,getAccessToken,disconnect};
+ return {status,start,complete,refresh,getAccessToken,disconnect,probe};
 }
