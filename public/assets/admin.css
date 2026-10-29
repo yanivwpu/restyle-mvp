@@ -130,3 +130,12 @@
 @media(max-width:640px){.ebay-finance-detail{min-width:0;width:100%}.ebay-finance-table{min-width:460px}}
 
 .ebay-match-status{font-size:12px;color:#805f35;overflow-wrap:anywhere}.ebay-match-status[data-status="MATCHED"]{color:#1c6845;font-weight:700}.ebay-match-status[data-status="NEEDS_REVIEW"]{color:#a35110}
+
+.ebay-money-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:15px 0 8px;max-width:760px}
+.ebay-money-card{padding:13px;border:1px solid #e8e4df;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:4px}
+.ebay-money-card small{font-size:12px;color:#615b57}.ebay-money-card strong{font-size:21px;font-weight:800;font-variant-numeric:tabular-nums}
+.ebay-money-card.credit{background:#edf8f0;border-color:#d5eada}.ebay-money-card.credit strong{color:#226a42}
+.ebay-money-card.debit{background:#fff2ea;border-color:#f3e1d1}.ebay-money-card.debit strong{color:#8d4e21}
+.ebay-money-card.estimate{background:#f3f5fb;border-color:#e0e5ef}.ebay-money-card.estimate strong{color:#31456b}
+.ebay-plain-note{font-size:12px!important;color:#6a6460!important;line-height:1.5}.ebay-earnings-notice{background:#fff8e9;border:1px solid #f0e2c4;border-radius:8px;padding:10px 12px;font-weight:600;font-size:13px!important;line-height:1.45}
+@media(max-width:630px){.ebay-money-cards{grid-template-columns:1fr}}
