@@ -8,7 +8,7 @@
   document.querySelector('#restyleListing')?.remove();
   const div=document.createElement('section');div.id='restyleListing';div.className='detail-editor';
   const d=state.draft,gates=state.gates||[],facts=d?.verifiedFacts||{};
-  let html='<h3>eBay Listing Assistant <span class="pilot-tag">DRAFTS ONLY</span></h3><p>Create and edit listing text inside SHUKCHIC. This workspace does not connect or publish to eBay yet.</p>';
+  let html='<h3>AI eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Prepare a factual title, description, category suggestion and item specifics. Samantha reviews every draft before future eBay publishing is enabled.</p>';
   if(gates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(gates.join(' · '))+'</p>';
   else html+='<p class="save-notice">Warehouse and agreement checks passed. Verify item facts below before generating.</p>';
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
@@ -17,15 +17,17 @@
   html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(gates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
   html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay Inventory Mapping will be a later integration.')+'</p></form>';
   if(d){
-   html+='<form id="listingEdit"><h3>Review listing draft · '+esc(d.source==='ai'?'AI suggestion':'starter template')+' · '+esc(d.status)+'</h3><div class="editor-grid">';
+   const approved=d.status==='REVIEWED';
+   html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft awaiting staff review')+'</strong><p>'+(approved?'The draft is approved inside SHUKCHIC only. No eBay listing has been created. Editing will return it to draft.':'Check the title, exact item condition, recommended category and price before marking it reviewed.')+'</p></div>';
+   html+='<form id="listingEdit"><h3>Review listing draft · '+esc(d.source==='ai'?'AI suggestion':'starter template')+'</h3><div class="editor-grid">';
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
    html+=field('Category suggestion','categorySuggestion',d.category_hint);
    html+=field('eBay category ID (staff confirmed)','categoryId',d.category_id);
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
-   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove">Mark staff-reviewed</button></div>';
-   html+='<p class="detail-meta">Category ID and price must be confirmed. Staff-reviewed does NOT publish anything. eBay OAuth, taxonomy validation and publishing still need to be connected.</p></form>';
+   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
+   html+='<p class="detail-meta">Category ID and price must be confirmed by staff. This is an internal review only: no listings are sent to eBay.</p></form>';
   }
   html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
