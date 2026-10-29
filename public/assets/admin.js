@@ -44,9 +44,20 @@ async function loadEbayStatus(){
  }catch(error){
    badge.textContent='Status unavailable';description.textContent='Could not verify eBay authorization readiness.';
    note.textContent=error.message;
-   start.hidden=refresh.hidden=disconnect.hidden=true;link.hidden=false;
+   start.hidden=refresh.hidden=disconnect.hidden=true;$('#ebayOrdersBtn').hidden=true;link.hidden=false;
  }
 }
+$('#ebayOrdersBtn')?.addEventListener('click',async()=>{
+ const btn=$('#ebayOrdersBtn'),out=$('#ebayOrdersResult');btn.disabled=true;out.hidden=false;out.textContent='Checking the latest eBay orders (read-only)…';
+ try{
+  const data=await api('/api/admin/ebay/orders-preview');
+  out.textContent='';
+  const headline=document.createElement('strong');headline.textContent='Live eBay orders: '+data.previewCount+' found (maximum 10; preview only)';out.append(headline);
+  if(!data.previewCount){const p=document.createElement('p');p.textContent='No orders returned. No data was imported.';out.append(p);}
+  for(const order of data.orders){const p=document.createElement('p');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' line item(s)';out.append(p);}
+ }catch(err){out.textContent='Live order preview failed: '+err.message;}
+ finally{btn.disabled=false;}
+});
 $('#ebayProbeBtn')?.addEventListener('click',async()=>{
  const btn=$('#ebayProbeBtn'),output=$('#ebayProbeResult');
  btn.disabled=true;output.hidden=false;output.textContent='Checking eBay Production API…';
