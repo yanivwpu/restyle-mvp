@@ -207,7 +207,7 @@ async function handle(req,res){
      const item=await response.json();
      const amount=x=>x?.currency==='USD'?String(x.value||'').slice(0,35):null;
      earnings={available:true,orderId:String(item.orderId||orderId).slice(0,100),totalSales:amount(item.totalSales),totalSellingCosts:amount(item.totalSellingCosts),netIncome:amount(item.netIncome),rawFieldsAvailable:Object.keys(item).slice(0,30)};
-    }else earnings={available:false,reason:'eBay returned HTTP '+response.status};
+    }else earnings={available:false,reauthorizationRequired:response.status===403,reason:response.status===403?'eBay requires earnings access permission; reconnect seller to authorize it.':'eBay earnings unavailable (HTTP '+response.status+')'};
    }catch{earnings={available:false,reason:'Order earnings could not be retrieved'};}
    if(!earnings.available)issues.push('ORDER_EARNINGS_NOT_VERIFIED');
    if(unverifiedAmounts)issues.push('TRANSACTION_AMOUNTS_NOT_VERIFIED');
