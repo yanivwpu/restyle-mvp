@@ -93,7 +93,13 @@ function renderEbayOrders(){
     const table=document.createElement('table');table.className='ebay-finance-table';const head=document.createElement('tr');
     for(const label of ['Type','Status','Entry','Amount']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
     for(const t of data.transactions){const tr=document.createElement('tr');for(const value of [ebayLabel(t.type),ebayReadable(t.status),ebayReadable(t.bookingEntry),t.amount===null?'Unavailable':t.amount+' USD']){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}
-    detail.append(table);const note=document.createElement('p');note.textContent='Reconciliation checks: '+data.issues.map(ebayReadable).join(' · ')+(data.shippingLabelCharges>1?' · '+data.shippingLabelCharges+' separate shipping label charges':'');detail.append(note);action.textContent='Hide finances';
+    detail.append(table);
+    if(data.ledger){
+     const dollars=n=>(n<0?'−':'')+'$'+(Math.abs(n)/100).toFixed(2);
+     const summary=document.createElement('p');summary.textContent='Provisional ledger: credits '+dollars(data.ledger.creditCents)+' · debits '+dollars(data.ledger.debitCents)+' · net '+dollars(data.ledger.netCents);detail.append(summary);
+     const compare=document.createElement('p');compare.textContent=data.earnings?.available?'eBay reported net income: '+(data.earnings.netIncome??'Not supplied')+' USD · verification required':'eBay order earnings unavailable: '+(data.earnings?.reason||'Unknown');detail.append(compare);
+    }
+    const note=document.createElement('p');note.textContent='Reconciliation checks: '+data.issues.map(ebayReadable).join(' · ')+(data.shippingLabelCharges>1?' · '+data.shippingLabelCharges+' separate shipping label charges':'');detail.append(note);action.textContent='Hide finances';
    }catch(e){detail.textContent='Financial preview failed: '+e.message;}
    finally{action.disabled=false;if(action.textContent==='Loading finances…')action.textContent='Review finances';}
   });
