@@ -66,9 +66,9 @@ $('#ebayConnectBtn')?.addEventListener('click',async()=>{
  }catch(e){alert(e.message);btn.disabled=false;}
 });
 $('#ebayRefreshBtn')?.addEventListener('click',async()=>{
- const b=$('#ebayRefreshBtn');b.disabled=true;
- try{await api('/api/admin/ebay/oauth/refresh',{method:'POST',body:'{}'});await loadEbayStatus();alert('Seller access token refreshed. No listings or orders were changed.');}
- catch(e){alert('Token refresh unsuccessful: '+e.message);}finally{b.disabled=false;}
+ const b=$('#ebayRefreshBtn'),output=$('#ebayProbeResult');b.disabled=true;output.hidden=false;output.textContent='Refreshing seller access token…';
+ try{const result=await api('/api/admin/ebay/oauth/refresh',{method:'POST',body:'{}'});await loadEbayStatus();output.textContent='PASS: eBay seller token renewed for '+String(result.sellerUsername||'connected seller')+'. No listings or orders were changed.';}
+ catch(e){output.textContent='FAILED: Token refresh unsuccessful: '+e.message;}finally{b.disabled=false;}
 });
 $('#ebayDisconnectBtn')?.addEventListener('click',async()=>{
  if(!confirm('Disconnect seller authorization from SHUKCHIC? No listing or transaction data will be changed on eBay.'))return;
