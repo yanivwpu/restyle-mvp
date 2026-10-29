@@ -99,7 +99,7 @@ export function createEbayOAuth({
  async function identity(accessToken){
    // Minimal public identity fields, and a hard match to the intended seller.
    // No authorization is persisted until this check succeeds.
-   const user=await wait(fetcher,base+'/commerce/identity/v1/user/',{
+   const user=await wait(fetcher,'https://apiz.ebay.com/commerce/identity/v1/user/',{
      headers:{Authorization:'Bearer '+accessToken}
    });
    const username=String(user?.username||'').trim();
