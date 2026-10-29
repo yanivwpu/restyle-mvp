@@ -80,3 +80,25 @@
 .ebay-finance-action:disabled{opacity:.55;cursor:wait}
 .ebay-finance-detail{padding:10px 12px;margin:7px 0 12px;background:#faf8f6;border-radius:8px;font-size:13px;overflow-wrap:anywhere}
 .ebay-finance-detail[hidden]{display:none}
+
+/* Dedicated eBay Sales workspace */
+.ebay-sales-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ebay-sales-toolbar input,.ebay-sales-toolbar select{border:1px solid #e5d8cf;border-radius:9px;background:white;padding:11px;min-height:42px;font:inherit}
+.ebay-sales-toolbar input{flex:1 1 230px;max-width:410px}
+.ebay-sales-toolbar select{flex:0 1 200px}
+.ebay-sales-pages{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.ebay-sales-count{font-weight:700;margin:4px 0 6px}
+.ebay-sales-order{display:flex;align-items:center;gap:14px;padding:14px 2px;border-bottom:1px solid #eee5df;min-width:0}
+.ebay-item-photo{width:62px;height:62px;border:1px solid #eee3d9;border-radius:9px;background:#f7f4f1;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#82736e;text-align:center}
+.ebay-item-photo img{height:100%;width:100%;object-fit:cover;border-radius:8px}
+.ebay-item-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.ebay-item-title{font-size:14px;font-weight:750;overflow-wrap:anywhere;color:#262221}
+.ebay-order-meta{color:#706663;font-size:12px;overflow-wrap:anywhere}
+.ebay-order-state{font-size:12px;text-transform:capitalize;color:#4c4642}
+.ebay-finance-table{border-collapse:collapse;width:100%;margin-top:9px;font-size:12px}
+.ebay-finance-table td,.ebay-finance-table th{padding:8px;border-bottom:1px solid #e8e0d9;text-align:left}
+.ebay-finance-table td:last-child,.ebay-finance-table th:last-child{text-align:right}
+.ebay-sales-settings{border-top:1px solid #ede2da;padding-top:12px}
+.ebay-sales-settings summary{cursor:pointer;font-weight:700;font-size:13px}
+.ebay-sales-settings[open] .ebay-sync-actions{margin:12px 0}
+@media(max-width:640px){.ebay-sales-order{flex-wrap:wrap}.ebay-sales-order .ebay-finance-action{margin-left:76px}.ebay-finance-detail{overflow-x:auto}.ebay-sales-toolbar input,.ebay-sales-toolbar select{max-width:none;width:100%}}
