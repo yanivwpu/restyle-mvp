@@ -155,14 +155,40 @@ async function handle(req,res){
    const upstream=await fetch(endpoint,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
    if(upstream.status===204)return json(res,200,{readOnly:true,orderId,transactions:[],issues:['NO_FINANCIAL_TRANSACTIONS_YET'],canPay:false});
    if(!upstream.ok)return problem(res,502,'eBay finances preview unavailable (HTTP '+upstream.status+').');
-   const data=await upstream.json();
-   const transactions=Array.isArray(data.transactions)?data.transactions:[];
-   const rows=transactions.filter(t=>t.orderId===orderId).map(t=>({type:String(t.transactionType||'').slice(0,60),status:String(t.transactionStatus||'').slice(0,60),bookingEntry:String(t.bookingEntry||'').slice(0,20),amount:t.amount?.currency==='USD'?String(t.amount?.value||'').slice(0,35):null,currency:t.amount?.currency==='USD'?'USD':null,transactionDate:String(t.transactionDate||'').slice(0,40)}));
-   const issues=['FINANCIAL_MAPPING_REQUIRES_REVIEW','DELIVERY_NOT_VERIFIED','NO_PAYOUT_ALLOWED'];
-   if(!rows.some(t=>t.type==='SALE'))issues.push('NO_SALE_TRANSACTION');
-   if(rows.some(t=>['REFUND','DISPUTE'].includes(t.type)))issues.push('REFUND_OR_DISPUTE_REQUIRES_REVIEW');
-   if(Number(data.total||rows.length)>rows.length)issues.push('ADDITIONAL_TRANSACTIONS_NOT_PREVIEWED');
-   return json(res,200,{readOnly:true,orderId,transactions:rows,issues,canPay:false,note:'Unallocated transactions only. No net proceeds, consignor payout, or shipping cost inferred.'});
+   const transactions=[], seenIds=new Set(),issues=['FINANCIAL_MAPPING_REQUIRES_REVIEW','DELIVERY_NOT_VERIFIED','NO_PAYOUT_ALLOWED'];
+   let offset=0,hasMore=true,pages=0,duplicateIds=0;
+   while(hasMore&&pages<10){
+    const batch=pages===0?await upstream.json():await (async()=>{
+     const next=new URL(endpoint);next.searchParams.set('offset',String(offset));
+     const response=await fetch(next,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+     if(!response.ok)throw new Error('eBay financial pagination failed (HTTP '+response.status+').');
+     return response.json();
+    })();
+    const raw=Array.isArray(batch.transactions)?batch.transactions:[];
+    for(const t of raw){
+     if(t.orderId!==orderId)continue;
+     const id=String(t.transactionId||'').slice(0,120);
+     if(id&&seenIds.has(id)){duplicateIds++;continue}
+     if(id)seenIds.add(id);
+     transactions.push({transactionId:id||null,type:String(t.transactionType||'').slice(0,60),status:String(t.transactionStatus||'').slice(0,60),bookingEntry:String(t.bookingEntry||'').slice(0,20),amount:t.amount?.currency==='USD'?String(t.amount?.value||'').slice(0,35):null,currency:t.amount?.currency==='USD'?'USD':null,transactionDate:String(t.transactionDate||'').slice(0,40)});
+    }
+    pages++;
+    offset+=raw.length;
+    const total=Number(batch.total);
+    hasMore=raw.length===50&&(Number.isFinite(total)&&total>offset||!Number.isFinite(total));
+    if(!raw.length)hasMore=false;
+   }
+   if(hasMore)issues.push('TRANSACTION_PAGINATION_INCOMPLETE');
+   if(duplicateIds)issues.push('DUPLICATE_TRANSACTION_IDS_IGNORED');
+   if(transactions.some(t=>!t.transactionId))issues.push('SOME_TRANSACTIONS_LACK_IDS');
+   if(!transactions.length)issues.push('NO_FINANCIAL_TRANSACTIONS_YET');
+   if(!transactions.some(t=>t.type==='SALE'))issues.push('NO_SALE_TRANSACTION');
+   const hasRefund=transactions.some(t=>t.type==='REFUND');
+   const hasDispute=transactions.some(t=>t.type==='DISPUTE');
+   if(hasRefund||hasDispute)issues.push('REFUND_OR_DISPUTE_REQUIRES_REVIEW');
+   const shippingLabels=transactions.filter(t=>t.type==='SHIPPING_LABEL'&&t.bookingEntry==='DEBIT');
+   const status=hasRefund||hasDispute?'Under review — refund or dispute':'Under review — financial verification';
+   return json(res,200,{readOnly:true,orderId,transactions,issues,canPay:false,payoutStatus:status,shippingLabelCharges:shippingLabels.length,complete:!hasMore,duplicateIdsSkipped:duplicateIds,note:'Transaction IDs deduplicated. Distinct shipping labels are separate charges. Amounts are unallocated; no net proceeds or payout inferred.'});
   }catch(err){return problem(res,err.status||502,err.status?err.message:'eBay finance request or response failed.');}
  }
  if(req.method==='GET'&&p==='/api/admin/ebay/orders-preview'){
