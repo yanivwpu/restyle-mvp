@@ -32,7 +32,7 @@ if(PRODUCTION && (ADMIN_PASSWORD.length < MIN_ADMIN_PASSWORD_LENGTH || SESSION_S
 }
 const ALLOWED_STATUSES = new Set(['SUBMITTED','NEEDS_INFO','ACCEPTED','AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID','REJECTED']);
 const CATEGORIES = new Set(['Handbags','Clothing','Shoes','Jewelry','Accessories','Other']);
-const CONDITIONS = new Set(['New with tags','Like new','Excellent','Good','Fair']);
+const CONDITIONS = new Set(['New with tags','New without tags','Like new','Excellent','Good','Fair']);
 const rate = new Map();
 
 fs.mkdirSync(UPLOAD_DIR,{recursive:true,mode:0o700});
