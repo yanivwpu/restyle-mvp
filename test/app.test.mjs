@@ -64,13 +64,13 @@ test('eBay OAuth callback blocks unsolicited codes and prevents disclosure',asyn
 test('eBay sample order preview is staff-only, synthetic and cannot pay anyone',async()=>{
  const blocked=await fetch(base+'/api/admin/ebay/sample');assert.equal(blocked.status,401);
  const page=await fetch(base+'/admin');const html=await page.text();
- assert.match(html,/Preview automatic order matching \(demo\)/);
+ assert.match(html,/Order matching demo/);
 });
 test('eBay automation status appears before any live seller connection',async()=>{
  const page=await fetch(base+'/admin');
  assert.equal(page.status,200);
  const html=await page.text();
- assert.match(html,/eBay sales automation/);
+ assert.match(html,/eBay Sales/);
  assert.match(html,/ebaySyncStatus/);
  assert.match(html,/Connect eBay seller/);
  const unauth=await fetch(base+'/api/admin/ebay/status');
