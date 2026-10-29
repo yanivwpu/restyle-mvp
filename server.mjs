@@ -321,7 +321,7 @@ async function handle(req,res){
  }
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
  if(req.method==='GET'&&p==='/api/admin/submissions'){
-   const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
+   const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count, (SELECT p.id FROM photos p WHERE p.submission_id=s.id ORDER BY p.rowid LIMIT 1) AS first_photo FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
  }
  // Authenticated listing-draft management only. No code path here publishes to eBay.
  // Staff-only settlement ledger: no payout processor and no money movement.
