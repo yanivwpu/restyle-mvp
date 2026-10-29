@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createSigning } from './signing.mjs';
 import { createListingDrafts } from './listing-drafts.mjs';
 import { createSettlements } from './settlements.mjs';
-import { sampleOrderPreview } from './ebay-reconciliation.mjs';
+import { sampleOrderPreview, examineEbayOrder } from './ebay-reconciliation.mjs';
 import { createEbayDeletionListener } from './ebay-deletion.mjs';
 import { createEbayOAuth } from './ebay-oauth.mjs';
 
@@ -177,6 +177,8 @@ async function handle(req,res){
    const upstream=await fetch(endpoint,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
    if(!upstream.ok)return problem(res,502,'eBay order preview unavailable (HTTP '+upstream.status+').');
    const data=await upstream.json(), orders=Array.isArray(data.orders)?data.orders:[];
+   // Inventory is read once and never modified by this preview.
+   const inventory=db.prepare("SELECT id,sku,status,received_verified FROM submissions WHERE sku<>''").all();
    const safe=x=>String(x||'').slice(0,180);
    return json(res,200,{readOnly:true,offset,pageSize:20,total:Number.isSafeInteger(data.total)?data.total:null,hasMore:Number.isSafeInteger(data.total)?offset+orders.length<data.total:orders.length===20,orders:orders.map(o=>{
     const lines=Array.isArray(o.lineItems)?o.lineItems:[];
@@ -184,7 +186,10 @@ async function handle(req,res){
     const listingId=/^\d{9,15}$/.test(String(first.legacyItemId||''))?String(first.legacyItemId):null;
     const rawImage=first.image?.imageUrl||first.imageUrl||'';
     let imageUrl=null;try{const u=new URL(rawImage);if(u.protocol==='https:'&&/(^|\.)ebayimg\.com$/.test(u.hostname))imageUrl=u.href}catch{}
-    return {orderId:safe(o.orderId),createdAt:safe(o.creationDate),paymentStatus:safe(o.orderPaymentStatus),fulfillmentStatus:safe(o.orderFulfillmentStatus),lineItems:lines.length,title:safe(first.title)||'Item details unavailable',sku:safe(first.sku),listingId,imageUrl,quantity:first.quantity||null};
+    const match=examineEbayOrder({order:o,inventory});
+    const matchIssues=match.issues.filter(issue=>!['FINANCE_RECONCILIATION_REQUIRED','DELIVERY_CONFIRMATION_REQUIRED','ORDER_NOT_FULFILLED','PAYMENT_NOT_CONFIRMED','BELOW_PILOT_SALE_MINIMUM','MISSING_ITEM_PRICE_USD'].includes(issue));
+    const inventoryStatus=match.submissionId?(matchIssues.length?'NEEDS_REVIEW':'MATCHED'):'UNMATCHED';
+    return {orderId:safe(o.orderId),createdAt:safe(o.creationDate),paymentStatus:safe(o.orderPaymentStatus),fulfillmentStatus:safe(o.orderFulfillmentStatus),lineItems:lines.length,title:safe(first.title)||'Item details unavailable',sku:safe(first.sku),listingId,imageUrl,quantity:first.quantity||null,inventoryMatch:{status:inventoryStatus,submissionId:match.submissionId,issues:matchIssues,canPay:false}};
    }),note:'Read-only paged preview. Item photos appear only when supplied by eBay. No imports or payouts.'});
   }catch(err){return problem(res,err.status||502,'eBay order preview unavailable: '+(err.status?err.message:'Connection or response failure.'));}
  }

@@ -77,6 +77,11 @@ function renderEbayOrders(){
   content.append(name);
   const meta=document.createElement('div');meta.className='ebay-order-meta';meta.textContent='Order '+o.orderId+' · '+(o.createdAt?new Date(o.createdAt).toLocaleDateString()+' · ':'')+o.lineItems+' item(s)'+(o.sku?' · SKU '+o.sku:'');content.append(meta);
   const status=document.createElement('span');status.className='ebay-order-state';status.textContent=ebayReadable(o.paymentStatus)+' · '+ebayReadable(o.fulfillmentStatus);content.append(status);
+  const match=o.inventoryMatch||{status:'UNMATCHED',issues:['MATCH_NOT_CHECKED']};
+  const matched=document.createElement('div');matched.className='ebay-match-status';
+  const phrase=match.status==='MATCHED'?'Inventory matched':match.status==='NEEDS_REVIEW'?'Inventory match needs review':'Not matched to SHUKCHIC inventory';
+  matched.textContent=phrase+(match.submissionId?' · Ref '+match.submissionId:'')+(match.issues?.length?' · '+match.issues.map(ebayReadable).join(', '):'');
+  matched.dataset.status=match.status;content.append(matched);
   const action=document.createElement('button');action.type='button';action.className='ebay-finance-action';action.textContent='Review finances';row.append(action);
   const detail=document.createElement('div');detail.className='ebay-finance-detail';detail.hidden=true;out.append(detail);
   action.addEventListener('click',async()=>{
