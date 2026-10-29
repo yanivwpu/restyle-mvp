@@ -110,3 +110,13 @@
 .ebay-sales-header .ebay-sales-settings[open]{width:100%}
 .ebay-sales-header .ebay-sales-settings[open]>summary{width:max-content;margin-left:auto}
 @media(max-width:640px){.ebay-sales-header .ebay-sales-settings{margin-left:0}}
+
+/* Place eBay settings at the very top-right, outside the eBay Sales card. */
+.dash-title{position:relative}
+.ebay-global-settings{position:relative;margin-left:auto;align-self:flex-start;border:0;padding:0;z-index:5}
+.ebay-global-settings>summary{list-style:none;cursor:pointer;border:1px solid #e5d8cf;border-radius:8px;padding:11px 14px;font-weight:700;background:#fff;white-space:nowrap}
+.ebay-global-settings>summary::-webkit-details-marker{display:none}
+.ebay-global-settings[open]{width:min(480px,100%)}
+.ebay-global-settings[open] .ebay-sync-actions{padding:12px 0}
+.ebay-global-settings[open]>summary{text-align:center}
+@media(max-width:760px){.ebay-global-settings{margin-left:0}.ebay-global-settings[open]{width:100%}}
