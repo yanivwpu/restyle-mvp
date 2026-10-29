@@ -102,3 +102,11 @@
 .ebay-sales-settings summary{cursor:pointer;font-weight:700;font-size:13px}
 .ebay-sales-settings[open] .ebay-sync-actions{margin:12px 0}
 @media(max-width:640px){.ebay-sales-order{flex-wrap:wrap}.ebay-sales-order .ebay-finance-action{margin-left:76px}.ebay-finance-detail{overflow-x:auto}.ebay-sales-toolbar input,.ebay-sales-toolbar select{max-width:none;width:100%}}
+
+.ebay-sales-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ebay-sales-header .ebay-sales-settings{border-top:0;padding:0;margin-left:auto;position:relative}
+.ebay-sales-header .ebay-sales-settings>summary{list-style:none;border:1px solid #e5d8cf;border-radius:8px;padding:9px 13px;background:#fff;white-space:nowrap;cursor:pointer}
+.ebay-sales-header .ebay-sales-settings>summary::-webkit-details-marker{display:none}
+.ebay-sales-header .ebay-sales-settings[open]{width:100%}
+.ebay-sales-header .ebay-sales-settings[open]>summary{width:max-content;margin-left:auto}
+@media(max-width:640px){.ebay-sales-header .ebay-sales-settings{margin-left:0}}
