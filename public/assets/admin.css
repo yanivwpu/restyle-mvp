@@ -71,3 +71,12 @@
 #ebayOrdersResult,#ebayProbeResult{width:100%;max-width:100%;min-width:0}
 #ebayOrdersResult p{margin:6px 0;overflow-wrap:anywhere}
 @media(max-width:760px){.ebay-sync-card{display:grid;grid-template-columns:minmax(0,1fr)}.ebay-sync-actions{width:100%}}
+
+/* Compact eBay order list: one row per order and a restrained review action. */
+.ebay-order-row{display:flex;align-items:center;flex-wrap:wrap;column-gap:12px;row-gap:5px;padding:10px 0;border-bottom:1px solid #efe8e1;font-size:14px}
+.ebay-order-row>span{min-width:0;overflow-wrap:anywhere}
+.ebay-finance-action{border:1px solid #e4d4c8;background:#fff;border-radius:7px;color:#333;padding:5px 10px;font:600 12px inherit;cursor:pointer;white-space:nowrap}
+.ebay-finance-action:hover{background:#faf3ed}
+.ebay-finance-action:disabled{opacity:.55;cursor:wait}
+.ebay-finance-detail{padding:10px 12px;margin:7px 0 12px;background:#faf8f6;border-radius:8px;font-size:13px;overflow-wrap:anywhere}
+.ebay-finance-detail[hidden]{display:none}
