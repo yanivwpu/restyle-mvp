@@ -142,6 +142,29 @@ async function handle(req,res){
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  // Read-only eBay integration readiness; never treat API credentials as seller authorization.
  // Seller OAuth consent and encrypted refresh token storage must be completed before sync begins.
+ if(req.method==='GET'&&p==='/api/admin/ebay/finances-preview'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  if(!throttle(req,'ebay-finances-preview',8,15*60_000))return problem(res,429,'Too many finance preview requests.');
+  const orderId=url.searchParams.get('orderId')||'';
+  if(!/^\d{2}-\d{4,8}-\d{4,8}$/.test(orderId))return problem(res,400,'Invalid eBay order ID.');
+  try{
+   const token=await ebayOAuth.getAccessToken();
+   const endpoint=new URL('https://apiz.ebay.com/sell/finances/v1/transaction');
+   endpoint.searchParams.set('filter','orderId:{'+orderId+'}');
+   endpoint.searchParams.set('limit','50');
+   const upstream=await fetch(endpoint,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+   if(upstream.status===204)return json(res,200,{readOnly:true,orderId,transactions:[],issues:['NO_FINANCIAL_TRANSACTIONS_YET'],canPay:false});
+   if(!upstream.ok)return problem(res,502,'eBay finances preview unavailable (HTTP '+upstream.status+').');
+   const data=await upstream.json();
+   const transactions=Array.isArray(data.transactions)?data.transactions:[];
+   const rows=transactions.filter(t=>t.orderId===orderId).map(t=>({type:String(t.transactionType||'').slice(0,60),status:String(t.transactionStatus||'').slice(0,60),bookingEntry:String(t.bookingEntry||'').slice(0,20),amount:t.amount?.currency==='USD'?String(t.amount?.value||'').slice(0,35):null,currency:t.amount?.currency==='USD'?'USD':null,transactionDate:String(t.transactionDate||'').slice(0,40)}));
+   const issues=['FINANCIAL_MAPPING_REQUIRES_REVIEW','DELIVERY_NOT_VERIFIED','NO_PAYOUT_ALLOWED'];
+   if(!rows.some(t=>t.type==='SALE'))issues.push('NO_SALE_TRANSACTION');
+   if(rows.some(t=>['REFUND','DISPUTE'].includes(t.type)))issues.push('REFUND_OR_DISPUTE_REQUIRES_REVIEW');
+   if(Number(data.total||rows.length)>rows.length)issues.push('ADDITIONAL_TRANSACTIONS_NOT_PREVIEWED');
+   return json(res,200,{readOnly:true,orderId,transactions:rows,issues,canPay:false,note:'Unallocated transactions only. No net proceeds, consignor payout, or shipping cost inferred.'});
+  }catch(err){return problem(res,err.status||502,err.status?err.message:'eBay finance request or response failed.');}
+ }
  if(req.method==='GET'&&p==='/api/admin/ebay/orders-preview'){
   if(!admin(req))return problem(res,401,'Admin login required.');
   if(!throttle(req,'ebay-orders-preview',6,15*60_000))return problem(res,429,'Too many preview requests.');
