@@ -27,6 +27,7 @@ async function loadEbayStatus(){
   const oauth=info.oauth||{};
   start.hidden=!oauth.configured;
   $('#ebayOrdersBtn').hidden=!oauth.connected;
+  if(oauth.connected&&!ebayResults)loadEbayOrders();
   refresh.hidden=!oauth.connected;
   disconnect.hidden=!oauth.connected;
   link.hidden=!!oauth.configured;
@@ -48,32 +49,65 @@ async function loadEbayStatus(){
    start.hidden=refresh.hidden=disconnect.hidden=true;$('#ebayOrdersBtn').hidden=true;$('#ebayOrdersBtn').hidden=true;link.hidden=false;
  }
 }
-$('#ebayOrdersBtn')?.addEventListener('click',async()=>{
- const btn=$('#ebayOrdersBtn'),out=$('#ebayOrdersResult');btn.disabled=true;out.hidden=false;out.textContent='Checking the latest eBay orders (read-only)…';
- try{
-  const data=await api('/api/admin/ebay/orders-preview');
-  out.textContent='';
-  const headline=document.createElement('strong');headline.textContent='Live eBay orders: '+data.previewCount+' found (maximum 10; preview only)';out.append(headline);
-  if(!data.previewCount){const p=document.createElement('p');p.textContent='No orders returned. No data was imported.';out.append(p);}
-  for(const order of data.orders){
-   const row=document.createElement('div');row.className='ebay-order-row';out.append(row);
-   const p=document.createElement('span');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' item(s)';row.append(p);
-   const action=document.createElement('button');action.type='button';action.className='ebay-finance-action';action.textContent='Review finances';row.append(action);
-   const detail=document.createElement('div');detail.className='ebay-finance-detail';detail.hidden=true;out.append(detail);
-   action.addEventListener('click',async()=>{
-    action.disabled=true;detail.hidden=false;detail.textContent='Checking eBay financial transactions…';
-    try{
-     const result=await api('/api/admin/ebay/finances-preview?orderId='+encodeURIComponent(order.orderId));
-     detail.textContent='';const h=document.createElement('strong');h.textContent='Transactions: '+result.transactions.length+' — payout blocked pending reconciliation';detail.append(h);
-     for(const t of result.transactions){const line=document.createElement('p');line.textContent=t.type+' / '+t.status+' / '+t.bookingEntry+' / '+(t.amount===null?'Amount unavailable':t.amount+' USD');detail.append(line);}
-     const issues=document.createElement('p');issues.textContent='Review flags: '+result.issues.join(', ');detail.append(issues);
-    }catch(err){detail.textContent='Financial preview failed: '+err.message;}
-    finally{action.disabled=false;}
-   });
-  }
- }catch(err){out.textContent='Live order preview failed: '+err.message;}
+let ebayPage=0,ebayResults=null;
+const ebayReadable=s=>String(s||'').toLowerCase().replace(/_/g,' ');
+const ebayOrderType=o=>{const p=o.paymentStatus.toUpperCase(),f=o.fulfillmentStatus.toUpperCase();
+ if(p.includes('REFUND'))return 'refunded';
+ if(p.includes('DISPUTE'))return 'disputed';
+ if(f==='FULFILLED')return 'shipped';
+ if(p==='PAID'||p==='FULLY_PAID')return 'awaiting';
+ return 'disputed';
+};
+const ebayLabel=t=>({SHIPPING_LABEL:'Shipping label',SALE:'Sale',REFUND:'Refund',DISPUTE:'Dispute',CREDIT:'Credit adjustment'}[t]||ebayReadable(t));
+function renderEbayOrders(){
+ const out=$('#ebayOrdersResult');out.textContent='';
+ if(!ebayResults){out.textContent='Select Refresh orders to load the latest sales.';return;}
+ const filter=$('#ebaySalesFilter').value,q=$('#ebaySalesSearch').value.trim().toLowerCase();
+ const orders=ebayResults.orders.filter(o=>(filter==='all'||ebayOrderType(o)===filter||filter==='paid'&&o.paymentStatus==='PAID')&&(!q||[o.orderId,o.title,o.sku].join(' ').toLowerCase().includes(q)));
+ const title=document.createElement('p');title.className='ebay-sales-count';title.textContent='Showing '+orders.length+' of '+ebayResults.orders.length+' orders on this page'+(ebayResults.total!==null?' · '+ebayResults.total+' total from eBay':'');out.append(title);
+ if(!orders.length){const empty=document.createElement('p');empty.textContent='No matching orders on this page.';out.append(empty);}
+ for(const o of orders){
+  const row=document.createElement('article');row.className='ebay-sales-order';out.append(row);
+  const media=document.createElement('div');media.className='ebay-item-photo';row.append(media);
+  if(o.imageUrl){const img=document.createElement('img');img.src=o.imageUrl;img.alt='eBay item image';img.loading='lazy';img.referrerPolicy='no-referrer';media.append(img);}
+  else{media.textContent='No photo';media.title='No verified photo returned by eBay';}
+  const content=document.createElement('div');content.className='ebay-item-copy';row.append(content);
+  const name=document.createElement(o.listingId?'a':'strong');name.textContent=o.title;name.className='ebay-item-title';
+  if(o.listingId){name.href='https://www.ebay.com/itm/'+o.listingId;name.target='_blank';name.rel='noopener noreferrer';}
+  content.append(name);
+  const meta=document.createElement('div');meta.className='ebay-order-meta';meta.textContent='Order '+o.orderId+' · '+(o.createdAt?new Date(o.createdAt).toLocaleDateString()+' · ':'')+o.lineItems+' item(s)'+(o.sku?' · SKU '+o.sku:'');content.append(meta);
+  const status=document.createElement('span');status.className='ebay-order-state';status.textContent=ebayReadable(o.paymentStatus)+' · '+ebayReadable(o.fulfillmentStatus);content.append(status);
+  const action=document.createElement('button');action.type='button';action.className='ebay-finance-action';action.textContent='Review finances';row.append(action);
+  const detail=document.createElement('div');detail.className='ebay-finance-detail';detail.hidden=true;out.append(detail);
+  action.addEventListener('click',async()=>{
+   if(!detail.hidden){detail.hidden=true;action.textContent='Review finances';return;}
+   detail.hidden=false;action.disabled=true;detail.textContent='Loading transactions…';
+   try{
+    const data=await api('/api/admin/ebay/finances-preview?orderId='+encodeURIComponent(o.orderId));
+    detail.textContent='';const h=document.createElement('strong');h.textContent='Financial transactions ('+data.transactions.length+') · Payout blocked';detail.append(h);
+    const table=document.createElement('table');table.className='ebay-finance-table';const head=document.createElement('tr');
+    for(const label of ['Type','Status','Entry','Amount']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
+    for(const t of data.transactions){const tr=document.createElement('tr');for(const value of [ebayLabel(t.type),ebayReadable(t.status),ebayReadable(t.bookingEntry),t.amount===null?'Unavailable':t.amount+' USD']){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}
+    detail.append(table);const note=document.createElement('p');note.textContent='Review required: '+data.issues.map(ebayReadable).join(' · ');detail.append(note);action.textContent='Hide finances';
+   }catch(e){detail.textContent='Financial preview failed: '+e.message;}
+   finally{action.disabled=false;}
+  });
+ }
+ $('#ebayPageLabel').textContent='Page '+(ebayPage+1);
+ $('#ebayPrevPage').disabled=ebayPage===0;
+ $('#ebayNextPage').disabled=!ebayResults.hasMore;
+}
+async function loadEbayOrders(){
+ const btn=$('#ebayOrdersBtn');btn.disabled=true;$('#ebayOrdersResult').textContent='Loading eBay orders (read-only)…';
+ try{ebayResults=await api('/api/admin/ebay/orders-preview?offset='+(ebayPage*20));renderEbayOrders();}
+ catch(e){$('#ebayOrdersResult').textContent='Could not load eBay orders: '+e.message;}
  finally{btn.disabled=false;}
-});
+}
+$('#ebayOrdersBtn')?.addEventListener('click',loadEbayOrders);
+$('#ebaySalesFilter')?.addEventListener('change',renderEbayOrders);
+$('#ebaySalesSearch')?.addEventListener('input',renderEbayOrders);
+$('#ebayPrevPage')?.addEventListener('click',()=>{if(ebayPage>0){ebayPage--;loadEbayOrders();}});
+$('#ebayNextPage')?.addEventListener('click',()=>{if(ebayResults?.hasMore){ebayPage++;loadEbayOrders();}});
 $('#ebayProbeBtn')?.addEventListener('click',async()=>{
  const btn=$('#ebayProbeBtn'),output=$('#ebayProbeResult');
  btn.disabled=true;output.hidden=false;output.textContent='Checking eBay Production API…';
