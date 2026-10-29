@@ -18,8 +18,16 @@ const norm=v=>String(v||'').trim().toLowerCase();
 const wait=async(fetcher,url,opt)=>{let response;
  try{response=await fetcher(url,{...opt,signal:AbortSignal.timeout(9000)});}
  catch{throw fail(502,'Unable to contact eBay. Please retry from the admin dashboard.');}
- let data;try{data=await response.json();}catch{throw fail(502,'Invalid response from eBay.');}
- if(!response.ok)throw fail(502,'eBay authorization request was rejected. Confirm the Production RuName and selected scopes.');
+ let data;try{data=await response.json();}catch{
+  // Log only safe transport metadata; never log token bodies, authorization codes, or credentials.
+  console.error('eBay OAuth upstream non-JSON response',{status:response.status,contentType:(response.headers?.get('content-type')||'').slice(0,80)});
+  throw fail(502,`eBay returned a non-JSON response (HTTP ${response.status}). Check the Railway OAuth diagnostics.`);
+ }
+ if(!response.ok){
+  const safeCode=typeof data?.error==='string'&&/^[a-zA-Z0-9_.-]{1,70}$/.test(data.error)?data.error:'unknown';
+  console.error('eBay OAuth upstream rejected request',{status:response.status,errorCode:safeCode});
+  throw fail(502,`eBay rejected the authorization request (HTTP ${response.status}; error ${safeCode}).`);
+ }
  return data;
 };
 export function createEbayOAuth({
