@@ -55,7 +55,21 @@ $('#ebayOrdersBtn')?.addEventListener('click',async()=>{
   out.textContent='';
   const headline=document.createElement('strong');headline.textContent='Live eBay orders: '+data.previewCount+' found (maximum 10; preview only)';out.append(headline);
   if(!data.previewCount){const p=document.createElement('p');p.textContent='No orders returned. No data was imported.';out.append(p);}
-  for(const order of data.orders){const p=document.createElement('p');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' line item(s)';out.append(p);}
+  for(const order of data.orders){
+   const p=document.createElement('p');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' line item(s)';out.append(p);
+   const action=document.createElement('button');action.type='button';action.className='small-button';action.textContent='Review finances (read-only)';action.style.marginBottom='12px';out.append(action);
+   const detail=document.createElement('div');detail.style.marginBottom='14px';out.append(detail);
+   action.addEventListener('click',async()=>{
+    action.disabled=true;detail.textContent='Checking eBay financial transactions…';
+    try{
+     const result=await api('/api/admin/ebay/finances-preview?orderId='+encodeURIComponent(order.orderId));
+     detail.textContent='';const h=document.createElement('strong');h.textContent='Transactions: '+result.transactions.length+' — payout blocked pending reconciliation';detail.append(h);
+     for(const t of result.transactions){const line=document.createElement('p');line.textContent=t.type+' / '+t.status+' / '+t.bookingEntry+' / '+(t.amount===null?'Amount unavailable':t.amount+' USD');detail.append(line);}
+     const issues=document.createElement('p');issues.textContent='Review flags: '+result.issues.join(', ');detail.append(issues);
+    }catch(err){detail.textContent='Financial preview failed: '+err.message;}
+    finally{action.disabled=false;}
+   });
+  }
  }catch(err){out.textContent='Live order preview failed: '+err.message;}
  finally{btn.disabled=false;}
 });
