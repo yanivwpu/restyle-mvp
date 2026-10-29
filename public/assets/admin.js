@@ -26,6 +26,7 @@ async function loadEbayStatus(){
   const info=await api('/api/admin/ebay/status');
   const oauth=info.oauth||{};
   start.hidden=!oauth.configured;
+  $('#ebayOrdersBtn').hidden=!oauth.connected;
   refresh.hidden=!oauth.connected;
   disconnect.hidden=!oauth.connected;
   link.hidden=!!oauth.configured;
@@ -44,7 +45,7 @@ async function loadEbayStatus(){
  }catch(error){
    badge.textContent='Status unavailable';description.textContent='Could not verify eBay authorization readiness.';
    note.textContent=error.message;
-   start.hidden=refresh.hidden=disconnect.hidden=true;$('#ebayOrdersBtn').hidden=true;link.hidden=false;
+   start.hidden=refresh.hidden=disconnect.hidden=true;$('#ebayOrdersBtn').hidden=true;$('#ebayOrdersBtn').hidden=true;link.hidden=false;
  }
 }
 $('#ebayOrdersBtn')?.addEventListener('click',async()=>{
