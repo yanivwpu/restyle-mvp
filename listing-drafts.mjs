@@ -51,6 +51,8 @@ export function createListingDrafts({db,signing,audit}){
  audit(sub.id,'LISTING DRAFT EDITED');return inspect(sub);}
  function approve(sub){if(gates(sub).length)throw Object.assign(new Error('Listing gates not satisfied.'),{status:409});const d=draft(sub.id);
  if(!d||!d.category_id||!d.price_cents||!d.title||!d.description)throw Object.assign(new Error('Save the price, eBay category ID, title and description first.'),{status:409});
+ if(d.status==='REVIEWED')return inspect(sub);
+ if(!Object.keys(d.verifiedFacts||{}).length)throw Object.assign(new Error('Verified warehouse facts are required.'),{status:409});
  const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET status='REVIEWED',reviewed_at=?,updated_at=? WHERE submission_id=?").run(now,now,sub.id);audit(sub.id,'LISTING DRAFT REVIEWED (NOT PUBLISHED)');return inspect(sub);}
  return {inspect,generate,save,approve};
 }
