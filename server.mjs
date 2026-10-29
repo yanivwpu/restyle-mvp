@@ -188,7 +188,30 @@ async function handle(req,res){
    if(hasRefund||hasDispute)issues.push('REFUND_OR_DISPUTE_REQUIRES_REVIEW');
    const shippingLabels=transactions.filter(t=>t.type==='SHIPPING_LABEL'&&t.bookingEntry==='DEBIT');
    const status=hasRefund||hasDispute?'Under review — refund or dispute':'Under review — financial verification';
-   return json(res,200,{readOnly:true,orderId,transactions,issues,canPay:false,payoutStatus:status,shippingLabelCharges:shippingLabels.length,complete:!hasMore,duplicateIdsSkipped:duplicateIds,note:'Transaction IDs deduplicated. Distinct shipping labels are separate charges. Amounts are unallocated; no net proceeds or payout inferred.'});
+   // Provisional ledger: eBay debits/credits are not automatically consignor proceeds.
+   const parseCents=value=>{
+    if(typeof value!=='string'||!/^(0|[1-9][0-9]{0,8})(\.[0-9]{1,2})?$/.test(value))return null;
+    const parts=value.split('.');return Number(parts[0])*100+Number(((parts[1]||'')+'00').slice(0,2));
+   };
+   let creditCents=0,debitCents=0,unverifiedAmounts=0;
+   for(const row of transactions){
+    const amount=parseCents(row.amount);
+    if(amount===null||!['CREDIT','DEBIT'].includes(row.bookingEntry)){unverifiedAmounts++;continue;}
+    if(row.bookingEntry==='CREDIT')creditCents+=amount;else debitCents+=amount;
+   }
+   const ledger={creditCents,debitCents,netCents:creditCents-debitCents,currency:'USD',provisional:true,complete:!hasMore&&unverifiedAmounts===0};
+   let earnings={available:false,reason:'Not available'};
+   try{
+    const response=await fetch('https://apiz.ebay.com/sell/finances/v1/order_earnings/'+encodeURIComponent(orderId),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+    if(response.ok){
+     const item=await response.json();
+     const amount=x=>x?.currency==='USD'?String(x.value||'').slice(0,35):null;
+     earnings={available:true,orderId:String(item.orderId||orderId).slice(0,100),totalSales:amount(item.totalSales),totalSellingCosts:amount(item.totalSellingCosts),netIncome:amount(item.netIncome),rawFieldsAvailable:Object.keys(item).slice(0,30)};
+    }else earnings={available:false,reason:'eBay returned HTTP '+response.status};
+   }catch{earnings={available:false,reason:'Order earnings could not be retrieved'};}
+   if(!earnings.available)issues.push('ORDER_EARNINGS_NOT_VERIFIED');
+   if(unverifiedAmounts)issues.push('TRANSACTION_AMOUNTS_NOT_VERIFIED');
+   return json(res,200,{readOnly:true,orderId,transactions,issues,canPay:false,payoutStatus:status,shippingLabelCharges:shippingLabels.length,ledger,earnings,complete:!hasMore,duplicateIdsSkipped:duplicateIds,note:'Transaction IDs deduplicated. Distinct shipping labels are separate charges. Amounts are unallocated; no net proceeds or payout inferred.'});
   }catch(err){return problem(res,err.status||502,err.status?err.message:'eBay finance request or response failed.');}
  }
  if(req.method==='GET'&&p==='/api/admin/ebay/orders-preview'){
