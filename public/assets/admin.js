@@ -56,11 +56,12 @@ $('#ebayOrdersBtn')?.addEventListener('click',async()=>{
   const headline=document.createElement('strong');headline.textContent='Live eBay orders: '+data.previewCount+' found (maximum 10; preview only)';out.append(headline);
   if(!data.previewCount){const p=document.createElement('p');p.textContent='No orders returned. No data was imported.';out.append(p);}
   for(const order of data.orders){
-   const p=document.createElement('p');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' line item(s)';out.append(p);
-   const action=document.createElement('button');action.type='button';action.className='small-button';action.textContent='Review finances (read-only)';action.style.marginBottom='12px';out.append(action);
-   const detail=document.createElement('div');detail.style.marginBottom='14px';out.append(detail);
+   const row=document.createElement('div');row.className='ebay-order-row';out.append(row);
+   const p=document.createElement('span');p.textContent='Order '+order.orderId+' — '+order.paymentStatus+' / '+order.fulfillmentStatus+' — '+order.lineItems+' item(s)';row.append(p);
+   const action=document.createElement('button');action.type='button';action.className='ebay-finance-action';action.textContent='Review finances';row.append(action);
+   const detail=document.createElement('div');detail.className='ebay-finance-detail';detail.hidden=true;out.append(detail);
    action.addEventListener('click',async()=>{
-    action.disabled=true;detail.textContent='Checking eBay financial transactions…';
+    action.disabled=true;detail.hidden=false;detail.textContent='Checking eBay financial transactions…';
     try{
      const result=await api('/api/admin/ebay/finances-preview?orderId='+encodeURIComponent(order.orderId));
      detail.textContent='';const h=document.createElement('strong');h.textContent='Transactions: '+result.transactions.length+' — payout blocked pending reconciliation';detail.append(h);
