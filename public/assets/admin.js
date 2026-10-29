@@ -48,11 +48,12 @@ async function loadEbayStatus(){
  }
 }
 $('#ebayProbeBtn')?.addEventListener('click',async()=>{
- const btn=$('#ebayProbeBtn');btn.disabled=true;
+ const btn=$('#ebayProbeBtn'),output=$('#ebayProbeResult');
+ btn.disabled=true;output.hidden=false;output.textContent='Checking eBay Production API…';
  try{
   const result=await api('/api/admin/ebay/oauth/probe',{method:'POST',body:'{}'});
-  alert(result.reachable?'eBay Production API: reachable. Application credentials passed. Seller OAuth still needs completion.':'eBay API test failed: '+result.status);
- }catch(err){alert('eBay API test failed: '+err.message);}
+  output.textContent=result.reachable?'PASS: eBay Production API issued an application token. Seller authorization still needs completion.':'FAILED: '+String(result.status||'Unknown API error');
+ }catch(err){output.textContent='FAILED: '+err.message;}
  finally{btn.disabled=false;}
 });
 $('#ebayConnectBtn')?.addEventListener('click',async()=>{
