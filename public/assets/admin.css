@@ -120,3 +120,11 @@
 .ebay-global-settings[open] .ebay-sync-actions{padding:12px 0}
 .ebay-global-settings[open]>summary{text-align:center}
 @media(max-width:760px){.ebay-global-settings{margin-left:0}.ebay-global-settings[open]{width:100%}}
+
+/* Compact finances: constrain table width and remove full-card stretching. */
+.ebay-finance-detail{width:fit-content;max-width:100%;min-width:min(100%,520px);box-sizing:border-box;overflow-x:auto}
+.ebay-finance-table{width:auto;min-width:460px;max-width:740px;table-layout:auto}
+.ebay-finance-table th,.ebay-finance-table td{padding:7px 14px 7px 8px;white-space:nowrap}
+.ebay-finance-table th:last-child,.ebay-finance-table td:last-child{text-align:right;padding-right:8px}
+.ebay-sales-order .ebay-finance-action{min-width:126px;flex-shrink:0}
+@media(max-width:640px){.ebay-finance-detail{min-width:0;width:100%}.ebay-finance-table{min-width:460px}}
