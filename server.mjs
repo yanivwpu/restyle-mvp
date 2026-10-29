@@ -154,6 +154,7 @@ async function handle(req,res){
    if(!admin(req))return problem(res,401,'Admin login required.');
    if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
    if(!throttle(req,'ebay-oauth',18,15*60_000))return problem(res,429,'Too many OAuth attempts. Try again shortly.');
+   if(p==='/api/admin/ebay/oauth/probe')return json(res,200,await ebayOAuth.probe());
    if(p==='/api/admin/ebay/oauth/start')return json(res,200,ebayOAuth.start());
    if(p==='/api/admin/ebay/oauth/refresh')return json(res,200,await ebayOAuth.refresh());
    if(p==='/api/admin/ebay/oauth/disconnect')return json(res,200,ebayOAuth.disconnect());
