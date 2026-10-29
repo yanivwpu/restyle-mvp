@@ -89,11 +89,11 @@ function renderEbayOrders(){
    detail.hidden=false;action.disabled=true;action.textContent='Loading finances…';detail.textContent='Loading transactions…';
    try{
     const data=await api('/api/admin/ebay/finances-preview?orderId='+encodeURIComponent(o.orderId));
-    detail.textContent='';const h=document.createElement('strong');h.textContent='Financial transactions ('+data.transactions.length+') · Payout blocked';detail.append(h);
+    detail.textContent='';const h=document.createElement('strong');h.textContent='Financial transactions ('+data.transactions.length+') · '+(data.payoutStatus||'Under review');detail.append(h);
     const table=document.createElement('table');table.className='ebay-finance-table';const head=document.createElement('tr');
     for(const label of ['Type','Status','Entry','Amount']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
     for(const t of data.transactions){const tr=document.createElement('tr');for(const value of [ebayLabel(t.type),ebayReadable(t.status),ebayReadable(t.bookingEntry),t.amount===null?'Unavailable':t.amount+' USD']){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}
-    detail.append(table);const note=document.createElement('p');note.textContent='Review required: '+data.issues.map(ebayReadable).join(' · ');detail.append(note);action.textContent='Hide finances';
+    detail.append(table);const note=document.createElement('p');note.textContent='Reconciliation checks: '+data.issues.map(ebayReadable).join(' · ')+(data.shippingLabelCharges>1?' · '+data.shippingLabelCharges+' separate shipping label charges':'');detail.append(note);action.textContent='Hide finances';
    }catch(e){detail.textContent='Financial preview failed: '+e.message;}
    finally{action.disabled=false;if(action.textContent==='Loading finances…')action.textContent='Review finances';}
   });
