@@ -26,7 +26,7 @@ async function loadEbayStatus(){
   const info=await api('/api/admin/ebay/status');
   const oauth=info.oauth||{};
   start.hidden=!oauth.configured;
-  start.textContent=oauth.connected?'Reconnect for earnings access':'Connect eBay seller';
+  start.textContent=oauth.connected?'Reconnect eBay seller':'Connect eBay seller';
   $('#ebayOrdersBtn').hidden=!oauth.connected;
   if(oauth.connected&&!ebayResults)loadEbayOrders();
   refresh.hidden=!oauth.connected;
@@ -105,7 +105,7 @@ function renderEbayOrders(){
      detail.append(cards);
      const explain=document.createElement('p');explain.className='ebay-plain-note';explain.textContent='Estimated from eBay activity only. Not a verified profit or consignor payment.';detail.append(explain);
      const verdict=document.createElement('p');verdict.className='ebay-earnings-notice';
-     verdict.textContent=data.earnings?.available?'eBay earnings available for comparison. Reported net income: '+(data.earnings.netIncome??'Not supplied')+' USD. Review is still required.':data.earnings?.reauthorizationRequired?'eBay needs permission to show official earnings. Open eBay connection settings above and select Reconnect for earnings access.':'Official eBay earnings not yet available. '+(data.earnings?.reason||'');
+     verdict.textContent=data.earnings?.available?'eBay earnings available for comparison. Reported net income: '+(data.earnings.netIncome??'Not supplied')+' USD. Review is still required.':data.earnings?.reauthorizationRequired?'Official eBay earnings are not available to this app yet. Your existing transactions are still available; no reconnection needed.':'Official eBay earnings not yet available. '+(data.earnings?.reason||'');
      detail.append(verdict);
     }
     const readable={FINANCIAL_MAPPING_REQUIRES_REVIEW:'Confirm fees and adjustments',DELIVERY_NOT_VERIFIED:'Delivery still needs verification',NO_PAYOUT_ALLOWED:'Consignor payment not approved',REFUND_OR_DISPUTE_REQUIRES_REVIEW:'Refund or dispute needs review',ORDER_EARNINGS_NOT_VERIFIED:'Official eBay earnings not confirmed',TRANSACTION_AMOUNTS_NOT_VERIFIED:'Some amounts need verification',TRANSACTION_PAGINATION_INCOMPLETE:'Not all transactions could be loaded'};

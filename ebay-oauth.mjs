@@ -7,8 +7,7 @@ const SCOPES=[
  'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
  'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
  'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
- 'https://api.ebay.com/oauth/api_scope/sell.finances',
- 'https://api.ebay.com/oauth/api_scope/sell.finances.earnings.read'
+ 'https://api.ebay.com/oauth/api_scope/sell.finances'
 ];
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
