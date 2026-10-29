@@ -142,6 +142,18 @@ async function handle(req,res){
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  // Read-only eBay integration readiness; never treat API credentials as seller authorization.
  // Seller OAuth consent and encrypted refresh token storage must be completed before sync begins.
+ if(req.method==='GET'&&p==='/api/admin/ebay/orders-preview'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  if(!throttle(req,'ebay-orders-preview',6,15*60_000))return problem(res,429,'Too many preview requests.');
+  try{
+   const token=await ebayOAuth.getAccessToken();
+   const upstream=await fetch('https://api.ebay.com/sell/fulfillment/v1/order?limit=10',{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+   if(!upstream.ok)return problem(res,502,'eBay order preview unavailable (HTTP '+upstream.status+').');
+   const data=await upstream.json();
+   const orders=Array.isArray(data.orders)?data.orders:[];
+   return json(res,200,{readOnly:true,previewCount:orders.length,orders:orders.map(o=>({orderId:String(o.orderId||'').slice(0,100),paymentStatus:String(o.orderPaymentStatus||'').slice(0,50),fulfillmentStatus:String(o.orderFulfillmentStatus||'').slice(0,50),lineItems:Array.isArray(o.lineItems)?o.lineItems.length:0})),note:'Live preview only; no orders imported, settlements changed, or listings published.'});
+  }catch(err){return problem(res,err.status||502,'eBay order preview unavailable: '+(err.status?err.message:'Connection or response failure.'));}
+ }
  if(req.method==='GET'&&p==='/api/admin/ebay/status'){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const oauth=ebayOAuth.status();
