@@ -95,6 +95,16 @@ function renderEbayOrders(){
     for(const label of ['Type','Status','Entry','Amount']){const cell=document.createElement('th');cell.textContent=label;head.append(cell);}table.append(head);
     for(const t of data.transactions){const tr=document.createElement('tr');for(const value of [ebayLabel(t.type),ebayReadable(t.status),ebayReadable(t.bookingEntry),t.amount===null?'Unavailable':t.amount+' USD']){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}
     detail.append(table);
+    if(data.businessSummary){
+     const view=document.createElement('div');view.className='ebay-business-summary';
+     const header=document.createElement('strong');header.textContent=data.businessSummary.label;view.append(header);
+     const body=document.createElement('p');body.textContent=data.businessSummary.explanation;view.append(body);
+     const lines=document.createElement('p');
+     lines.textContent='Shipping charges and credits are included in the totals below. Refund and dispute adjustments require review.';
+     view.append(lines);
+     const notice=document.createElement('small');notice.textContent='Consignor payment: Not eligible. All amounts provisional.';view.append(notice);
+     detail.append(view);
+    }
     if(data.ledger){
      const dollars=n=>(n<0?'−':'')+'$'+(Math.abs(n)/100).toFixed(2);
      const cards=document.createElement('div');cards.className='ebay-money-cards';

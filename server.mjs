@@ -200,6 +200,22 @@ async function handle(req,res){
     if(row.bookingEntry==='CREDIT')creditCents+=amount;else debitCents+=amount;
    }
    const ledger={creditCents,debitCents,netCents:creditCents-debitCents,currency:'USD',provisional:true,complete:!hasMore&&unverifiedAmounts===0};
+   // Read-only classification, never a verified settlement or permission to pay.
+   const groups={shippingCents:0,refundCents:0,disputeCents:0,adjustmentCents:0,saleCents:0,otherCents:0};
+   const ambiguous=[];
+   for(const t of transactions){
+    const n=parseCents(t.amount);
+    if(n===null||!['CREDIT','DEBIT'].includes(t.bookingEntry)){ambiguous.push('UNVERIFIED_AMOUNT');continue;}
+    const signed=t.bookingEntry==='CREDIT'?n:-n;
+    if(t.type==='SHIPPING_LABEL')groups.shippingCents+=signed;
+    else if(t.type==='REFUND')groups.refundCents+=signed;
+    else if(t.type==='DISPUTE')groups.disputeCents+=signed;
+    else if(t.type==='SALE')groups.saleCents+=signed;
+    else if(t.type==='CREDIT')groups.adjustmentCents+=signed;
+    else {groups.otherCents+=signed;ambiguous.push('UNMAPPED_TRANSACTION_TYPE');}
+   }
+   const refunded=hasRefund||hasDispute;
+   const businessSummary={label:refunded?'Refund or dispute — review needed':'Sale recorded — verification needed',kind:refunded?'refund':'sale',groups,unresolved:[...new Set(ambiguous)],estimatedBalanceCents:ledger.netCents,consignorPayoutEligible:false,explanation:refunded?'Customer refund or dispute activity exists. No consignor payment is currently eligible.':'Funds are recorded, but delivery, fees and the inventory match still need verification.'};
    let earnings={available:false,reason:'Not available'};
    try{
     const response=await fetch('https://apiz.ebay.com/sell/finances/v1/order_earnings/'+encodeURIComponent(orderId),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
@@ -211,7 +227,7 @@ async function handle(req,res){
    }catch{earnings={available:false,reason:'Order earnings could not be retrieved'};}
    if(!earnings.available)issues.push('ORDER_EARNINGS_NOT_VERIFIED');
    if(unverifiedAmounts)issues.push('TRANSACTION_AMOUNTS_NOT_VERIFIED');
-   return json(res,200,{readOnly:true,orderId,transactions,issues,canPay:false,payoutStatus:status,shippingLabelCharges:shippingLabels.length,ledger,earnings,complete:!hasMore,duplicateIdsSkipped:duplicateIds,note:'Transaction IDs deduplicated. Distinct shipping labels are separate charges. Amounts are unallocated; no net proceeds or payout inferred.'});
+   return json(res,200,{readOnly:true,orderId,transactions,issues,canPay:false,payoutStatus:status,shippingLabelCharges:shippingLabels.length,ledger,businessSummary,earnings,complete:!hasMore,duplicateIdsSkipped:duplicateIds,note:'Transaction IDs deduplicated. Distinct shipping labels are separate charges. Amounts are unallocated; no net proceeds or payout inferred.'});
   }catch(err){return problem(res,err.status||502,err.status?err.message:'eBay finance request or response failed.');}
  }
  if(req.method==='GET'&&p==='/api/admin/ebay/orders-preview'){
