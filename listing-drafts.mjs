@@ -25,21 +25,24 @@ async function generateAI(f){
 export function createListingDrafts({db,signing,audit}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_listing_drafts (submission_id TEXT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'DRAFT',source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,category_hint TEXT NOT NULL DEFAULT '',category_id TEXT NOT NULL DEFAULT '',aspects_json TEXT NOT NULL DEFAULT '{}',checks_json TEXT NOT NULL DEFAULT '[]',verified_facts_json TEXT NOT NULL DEFAULT '{}',price_cents INTEGER,reviewed_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  function draft(id){const r=db.prepare('SELECT * FROM ebay_listing_drafts WHERE submission_id=?').get(id);return r?{...r,aspects:unpack(r.aspects_json,{}),checks:unpack(r.checks_json,[]),verifiedFacts:unpack(r.verified_facts_json,{})}:null;}
- function gates(sub){if(!sub)return ['Submission missing'];const issues=[];const agreement=signing.state(sub.id);
+ function draftGates(sub){if(!sub)return ['Submission missing'];const issues=[];const agreement=signing.state(sub.id);
  if(agreement?.state!=='SIGNED')issues.push('Signed consignment agreement required');
- if(!sub.received_verified||!['RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Warehouse item must be received and verified');
- if(!clean(sub.sku))issues.push('Warehouse SKU is required');
- if(!clean(sub.bin_location))issues.push('Warehouse bin is required');
+ if(!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Approve item before drafting');
  if(!db.prepare('SELECT COUNT(*) AS n FROM photos WHERE submission_id=?').get(sub.id).n)issues.push('Item photograph is required');
  return issues;}
- function inspect(sub){return {draft:draft(sub.id),gates:gates(sub),aiAvailable:!!process.env.OPENAI_API_KEY,ebayConnected:false,publishingEnabled:false,ebayMapping:{enabled:false,marketplace:'EBAY_US',status:'ACCESS_NOT_VERIFIED',message:'eBay Inventory Mapping requires a separate sell.inventory.mapping authorization. Existing seller scopes must not be modified until the app permission is confirmed. No eBay AI preview was requested.',documentation:'https://developer.ebay.com/develop/api/sell/inventory_mapping'}};}
- async function generate(sub,body){const issues=gates(sub);if(issues.length)throw Object.assign(new Error(issues.join('; ')),{status:409});
- if(body.confirmPhysicalFacts!==true)throw Object.assign(new Error('Staff must confirm the product details were verified in person.'),{status:400});
+ function gates(sub){const issues=draftGates(sub);if(!sub)return issues;
+ if(!sub.received_verified||!['RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Warehouse item must be received and verified before final approval');
+ if(!clean(sub.sku))issues.push('Warehouse SKU is required for final approval');
+ if(!clean(sub.bin_location))issues.push('Warehouse bin is required for final approval');
+ return issues;}
+ function inspect(sub){return {draft:draft(sub.id),draftGates:draftGates(sub),gates:gates(sub),aiAvailable:!!process.env.OPENAI_API_KEY,ebayConnected:false,publishingEnabled:false,ebayMapping:{enabled:false,marketplace:'EBAY_US',status:'ACCESS_NOT_VERIFIED',message:'eBay Inventory Mapping requires a separate sell.inventory.mapping authorization. Existing seller scopes must not be modified until the app permission is confirmed. No eBay AI preview was requested.',documentation:'https://developer.ebay.com/develop/api/sell/inventory_mapping'}};}
+ async function generate(sub,body){const issues=draftGates(sub);if(issues.length)throw Object.assign(new Error(issues.join('; ')),{status:409});
+ if(body.confirmPhysicalFacts!==true)throw Object.assign(new Error('Staff must confirm the entered product information is based on the customer submission or inspected facts.'),{status:400});
  const f=factsFor(sub,body),mode=body.mode==='ai'?'ai':'starter',result=mode==='ai'?await generateAI(f):starter(f);
  const title=clean(result.title,80),desc=clean(result.description,5000),cat=clean(result.categorySuggestion,180);
  if(title.length<5||desc.length<30)throw Object.assign(new Error('Incomplete generation result. Draft unchanged.'),{status:502});
  const asp=Object.fromEntries(Object.entries(result.aspects||{}).slice(0,30).map(([k,v])=>[clean(k,65),clean(v,150)]));
- const checks=(result.checks||[]).slice(0,14).map(x=>clean(x,250));const date=new Date().toISOString();
+ const checks=(result.checks||[]).slice(0,14).map(x=>clean(x,250));if(!sub.received_verified)checks.unshift('Preliminary draft: item and condition not yet physically inspected');const date=new Date().toISOString();
  const prior=draft(sub.id);db.prepare("INSERT INTO ebay_listing_drafts (submission_id,status,source,title,description,category_hint,aspects_json,checks_json,verified_facts_json,price_cents,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET status='DRAFT',source=excluded.source,title=excluded.title,description=excluded.description,category_hint=excluded.category_hint,aspects_json=excluded.aspects_json,checks_json=excluded.checks_json,verified_facts_json=excluded.verified_facts_json,price_cents=excluded.price_cents,reviewed_at=NULL,updated_at=excluded.updated_at").run(sub.id,'DRAFT',mode,title,desc,cat,JSON.stringify(asp),JSON.stringify(checks),JSON.stringify(f),prior?.price_cents??null,date,date);
  audit(sub.id,'LISTING '+mode.toUpperCase()+' DRAFT GENERATED');return inspect(sub);}
  function save(sub,body){if(gates(sub).length)throw Object.assign(new Error('Listing safety gates not satisfied.'),{status:409});if(!draft(sub.id))throw Object.assign(new Error('Generate a draft first.'),{status:409});
