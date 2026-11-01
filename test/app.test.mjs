@@ -175,12 +175,14 @@ test('Approval signing flow stores protected PDF and queues shipping only after 
  const noAccess=await fetch(base+`/api/admin/submissions/${id}/agreement.pdf`);assert.equal(noAccess.status,401);
  const second=await request(`/api/agreements/${token}`,{method:'POST',body:JSON.stringify({signerName:'Alex Reviewer',email:'alex@example.com',electronicConsent:true,agreeTerms:true,typedSignature:true})});assert.equal(second.r.status,409);
  const signedPdfCustomer=await fetch(base+`/api/agreements/${token}/pdf`);assert.equal(signedPdfCustomer.status,200);
- // Staff listing-draft gate: signed alone is not enough until warehouse confirms possession.
+ // Signed acceptance permits preliminary drafts, but final approval requires verified warehouse possession.
  const before=await request(`/api/admin/submissions/${id}/listing`);
  assert.equal(before.r.status,200);assert.equal(before.data.publishingEnabled,false);assert.equal(before.data.aiAvailable,false);
  assert.ok(before.data.gates.some(x=>x.includes('Warehouse')));
  const blockedDraft=await request(`/api/admin/submissions/${id}/listing/generate`,{method:'POST',body:JSON.stringify({mode:'starter',confirmPhysicalFacts:true})});
- assert.equal(blockedDraft.r.status,409);
+ assert.equal(blockedDraft.r.status,200);assert.equal(blockedDraft.data.draft.status,'DRAFT');
+ const blockedReview=await request(`/api/admin/submissions/${id}/listing/approve`,{method:'POST',body:'{}'});
+ assert.equal(blockedReview.r.status,409);
  const warehouse=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'RECEIVED',receivedVerified:true,sku:'RS-PRADA-1',binLocation:'B-1'})});
  assert.equal(warehouse.r.status,200);
  const draft=await request(`/api/admin/submissions/${id}/listing/generate`,{method:'POST',body:JSON.stringify({mode:'starter',confirmPhysicalFacts:true,size:'Medium',color:'Black',flaws:'Minor corner scuff'})});
