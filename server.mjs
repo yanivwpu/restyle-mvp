@@ -10,6 +10,7 @@ import { createSettlements } from './settlements.mjs';
 import { sampleOrderPreview, examineEbayOrder } from './ebay-reconciliation.mjs';
 import { createEbayDeletionListener } from './ebay-deletion.mjs';
 import { createEbayOAuth } from './ebay-oauth.mjs';
+import { createEbayMapping } from './ebay-ai-mapping.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
