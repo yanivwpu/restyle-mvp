@@ -52,6 +52,21 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
     created_at TEXT NOT NULL
   );`);
   const terms=String(process.env.CONSIGNMENT_AGREEMENT_TEXT||'').trim();
+  // Future agreement snapshots only. Previously issued and signed snapshots stay immutable.
+  const channelsClause=[
+    'SALES CHANNELS, PRODUCT CONTENT AND SOCIAL MEDIA CONSENT',
+    'The Consignor authorizes SHUKCHIC to photograph, describe, advertise, promote, list and sell the consigned item through its own websites and online stores and eligible third-party marketplaces, including eBay, Shopify-powered stores, Poshmark, Depop, Etsy (where eligible), and additional online, physical or digital sales channels selected by SHUKCHIC.',
+    'The Consignor also authorizes organic and paid promotion of the item on social media, including Instagram, Facebook, TikTok, Pinterest and other current or future platforms, in posts, stories, reels, videos, advertisements and email marketing.',
+    'For these purposes, the Consignor grants SHUKCHIC a non-exclusive, royalty-free license to use, reproduce, crop, edit and adapt item-related photographs, videos, descriptions and other product materials supplied for the consignment or created by SHUKCHIC, including through AI-assisted drafting or editing, without misrepresenting material product characteristics.',
+    'SHUKCHIC may add, remove or change eligible sales and marketing channels without obtaining a new signature, provided the agreed commission split, payout terms and minimum authorized sale price (if any) remain unchanged. Marketplace eligibility rules continue to apply.',
+    'This authorization does not permit SHUKCHIC to publish the Consignor\'s private contact information or use the Consignor\'s name, image, likeness, or testimonial as an endorsement without separate consent.',
+    'After consignment ends, SHUKCHIC may retain product materials for business records and historical portfolio or promotional archives, but will not represent the item as currently available when it is not.',
+  ].join('\n');
+  const futureTerms=base=>{
+    // Remove the obsolete marketplace-by-marketplace consent requirement when present.
+    const normalized=base.replace(/Other marketplaces require Consignor[\u2019']s\s+prior written agreement\.?/gi,'');
+    return normalized.trim()+'\n\n'+channelsClause;
+  };
   const shipping=String(process.env.CONSIGNMENT_SHIPPING_INSTRUCTIONS||'').trim();
   const pilot=process.env.AGREEMENT_PILOT_MODE==='true';
   const configured=terms.length>=50 && shipping.length>=15;
@@ -66,14 +81,14 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
     // Creates a one-time private signing link; the raw token appears only in the customer email.
     const token=crypto.randomBytes(32).toString('hex');
     const expires=new Date(Date.now()+14*24*3600_000).toISOString();
-    const snapshot=`SHUKCHIC CONSIGNMENT AGREEMENT\nSubmission: ${sub.id}\nItem: ${sub.brand} / ${sub.category}\nConsignor email: ${sub.email}\n\n${terms}\n\nPlease do not ship any item before the agreement is signed and shipping instructions are provided.`;
+    const snapshot=`SHUKCHIC CONSIGNMENT AGREEMENT\nSubmission: ${sub.id}\nItem: ${sub.brand} / ${sub.category}\nConsignor email: ${sub.email}\n\n${futureTerms(terms)}\n\nPlease do not ship any item before the agreement is signed and shipping instructions are provided.`;
     db.prepare(`INSERT INTO consignment_agreements (submission_id, token_hash, token_expires_at, terms_snapshot, terms_sha256, created_at)
       VALUES (?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET token_hash=excluded.token_hash, token_expires_at=excluded.token_expires_at,
       terms_snapshot=excluded.terms_snapshot, terms_sha256=excluded.terms_sha256, state='PENDING', signer_name=NULL, signer_email=NULL,
       signed_at=NULL, signer_ip=NULL, signer_user_agent=NULL, signature_sha256=NULL, pdf_sha256=NULL, pdf_file=NULL, created_at=excluded.created_at`).run(sub.id,sha(token),expires,snapshot,sha(snapshot),date());
     const link=`${baseUrl}/sign/${token}`;
     const title=pilot?'Pilot item approved — test agreement':'Your item is approved — please sign the agreement';
-    queueMail(sub.id,'approval_sign',sub.email,`SHUKCHIC: ${title} (${sub.id})`,mail(title,`<p>Hi ${safe(sub.first_name)},</p><p>We've provisionally approved your item for the next step. Eligible items are prepared for resale on eBay through our designated seller account after receipt and inspection; SHUKCHIC is independent of eBay.</p><p>Before signing, please review the payout tiers, 90-day minimum consignment period, shipping and returns costs, and post-sale payment timing in your agreement. Your exact payout depends on the final selling price and eligible transaction expenses.</p><p><a href="${safe(link)}" style="display:inline-block;background:#ff8926;color:white;padding:13px 18px;border-radius:8px">Review and e-sign your agreement</a></p><p>This private link expires in 14 days. <strong>Do not ship anything yet.</strong> Shipping instructions will be emailed after the agreement is signed and accepted.</p><p>Reference: ${safe(sub.id)}</p>`));
+    queueMail(sub.id,'approval_sign',sub.email,`SHUKCHIC: ${title} (${sub.id})`,mail(title,`<p>Hi ${safe(sub.first_name)},</p><p>We've provisionally approved your item for the next step. Eligible items may be marketed through SHUKCHIC and approved third-party sales channels after receipt and inspection; SHUKCHIC is independent of those marketplaces.</p><p>Before signing, please review the payout tiers, 90-day minimum consignment period, shipping and returns costs, and post-sale payment timing in your agreement. Your exact payout depends on the final selling price and eligible transaction expenses.</p><p><a href="${safe(link)}" style="display:inline-block;background:#ff8926;color:white;padding:13px 18px;border-radius:8px">Review and e-sign your agreement</a></p><p>This private link expires in 14 days. <strong>Do not ship anything yet.</strong> Shipping instructions will be emailed after the agreement is signed and accepted.</p><p>Reference: ${safe(sub.id)}</p>`));
     audit(sub.id,'AGREEMENT LINK ISSUED');
   }
   function rejection(sub){
