@@ -92,7 +92,17 @@ const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,e
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
 const ebayOAuth=createEbayOAuth({db});
-const ebayMapping=createEbayMapping({db,oauth:ebayOAuth});
+const aiImageExpiresMs=90*60*1000;
+function aiPhotoUrls(sub){
+ if(!SESSION_SECRET||!PUBLIC_BASE_URL.startsWith('https://'))throw Object.assign(new Error('Secure HTTPS photo sharing is not configured.'),{status:503});
+ const exp=Date.now()+aiImageExpiresMs;
+ return db.prepare('SELECT id FROM photos WHERE submission_id=? ORDER BY rowid LIMIT 5').all(sub.id).map(photo=>{
+  const message=photo.id+':'+exp;
+  const sig=crypto.createHmac('sha256',SESSION_SECRET).update(message).digest('hex');
+  return PUBLIC_BASE_URL+'/api/ebay/ai-photo/'+photo.id+'?exp='+exp+'&sig='+sig;
+ });
+}
+const ebayMapping=createEbayMapping({db,oauth:ebayOAuth,photoUrls:aiPhotoUrls});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
@@ -109,6 +119,19 @@ async function handle(req,res){
  // OAuth consent returns from eBay without the SameSite=Strict staff session.
  // One-use 256-bit state, persisted on our server, authenticates the callback.
  // No authorization code is logged, stored, reflected, or placed in the result URL.
+ // Time-bound bearer URLs exclusively for eBay's image analysis. Never index or cache.
+ const aiImageMatch=p.match(/^\/api\/ebay\/ai-photo\/([0-9a-f-]{36})$/);
+ if(req.method==='GET'&&aiImageMatch){
+  const id=aiImageMatch[1],exp=Number(url.searchParams.get('exp')),sig=url.searchParams.get('sig')||'';
+  const validTime=Number.isSafeInteger(exp)&&exp>Date.now()&&exp<=Date.now()+aiImageExpiresMs;
+  const expect=validTime?crypto.createHmac('sha256',SESSION_SECRET).update(id+':'+exp).digest('hex'):'';
+  if(!SESSION_SECRET||!validTime||!/^[a-f0-9]{64}$/.test(sig)||!crypto.timingSafeEqual(Buffer.from(sig,'hex'),Buffer.from(expect||'0'.repeat(64),'hex')))return problem(res,404,'Image unavailable.');
+  const photo=db.prepare('SELECT p.filename,p.mime FROM photos p JOIN consignment_agreements a ON a.submission_id=p.submission_id WHERE p.id=? AND a.state=?').get(id,'SIGNED');
+  if(!photo)return problem(res,404,'Image unavailable.');
+  res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
+  res.setHeader('Referrer-Policy','no-referrer');
+  return serve(res,path.join(UPLOAD_DIR,path.basename(photo.filename)),photo.mime,true);
+ }
  if(req.method==='GET'&&p==='/api/ebay/oauth/callback'){
    let message='The eBay connection was not completed.';
    let good=false;
