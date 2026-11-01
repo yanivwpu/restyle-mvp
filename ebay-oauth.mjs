@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 // OAuth is an isolated seller-authorization component. No inventory, orders,
 // listing or payout API methods are called here.
 // eBay uses the generated RuName in BOTH the authorize and code grant requests.
+const MAPPING_SCOPE='https://api.ebay.com/oauth/api_scope/sell.inventory.mapping';
 const SCOPES=[
  'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
  'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
@@ -36,6 +37,8 @@ export function createEbayOAuth({
  expectedUsername='ssammikat99u2',fetcher=fetch,clock=()=>Date.now()
 }={}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_oauth_states (state_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)");
+ db.exec("CREATE TABLE IF NOT EXISTS ebay_ai_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1), seller_user_id TEXT NOT NULL,seller_username TEXT NOT NULL,token_cipher TEXT NOT NULL,access_expires_at INTEGER NOT NULL,refresh_expires_at INTEGER NOT NULL,connected_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS ebay_ai_oauth_states (state_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)");
  db.exec("CREATE TABLE IF NOT EXISTS ebay_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1), seller_user_id TEXT NOT NULL, seller_username TEXT NOT NULL, token_cipher TEXT NOT NULL, access_expires_at INTEGER NOT NULL, refresh_expires_at INTEGER NOT NULL, connected_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
  let key=null;
  try{const buf=Buffer.from(encryptionKey||'','base64url');if(buf.length===32&&typeof encryptionKey==='string'&&/^[A-Za-z0-9_-]{43}$/.test(encryptionKey))key=buf;}catch{}
@@ -81,6 +84,49 @@ export function createEbayOAuth({
    u.searchParams.set('scope',SCOPES.join(' '));
    u.searchParams.set('state',nonce);
    return {authorizationUrl:u.toString(),expiresInSeconds:600};
+ }
+ function aiStatus(){const r=db.prepare('SELECT * FROM ebay_ai_oauth_connection WHERE id=1').get();return {connected:!!r,sellerUsername:r?.seller_username||null,configured,readOnlyPreview:true,publishingEnabled:false};}
+ function startAI(){
+   requireConfig();if(!readRow())throw fail(409,'Connect the standard eBay seller first.');
+   const nonce=crypto.randomBytes(32).toString('base64url'),now=clock();
+   db.prepare('DELETE FROM ebay_ai_oauth_states WHERE expires_at<?').run(now);
+   db.prepare('INSERT INTO ebay_ai_oauth_states(state_hash,created_at,expires_at) VALUES (?,?,?)').run(hash(nonce),now,now+600000);
+   const u=new URL('https://auth.ebay.com/oauth2/authorize');
+   u.searchParams.set('client_id',clientId);u.searchParams.set('response_type','code');u.searchParams.set('redirect_uri',ruName);
+   u.searchParams.set('scope',[...SCOPES,MAPPING_SCOPE].join(' '));u.searchParams.set('state',nonce);
+   return {authorizationUrl:u.toString(),expiresInSeconds:600};
+ }
+ async function completeAI({state,code,error}){
+   if(typeof state!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(state))throw fail(400,'Invalid authorization state.');
+   const ok=db.prepare('UPDATE ebay_ai_oauth_states SET consumed_at=? WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?').run(clock(),hash(state),clock());
+   if(ok.changes!==1)throw fail(400,'AI authorization expired or already used.');
+   if(error)throw fail(400,'AI access declined. The existing eBay connection is unchanged.');
+   if(!tokenValid(code))throw fail(400,'No valid authorization code was returned.');
+   const r=await requestTokens({grant_type:'authorization_code',code,redirect_uri:ruName});
+   if(!tokenValid(r.access_token)||!tokenValid(r.refresh_token))throw fail(502,'Incomplete AI authorization. No changes made.');
+   const user=await identity(r.access_token),main=readRow();
+   if(!main||user.userId!==main.seller_user_id)throw fail(409,'AI authorization seller does not match the connected seller. Existing connection unchanged.');
+   const access=refreshTime(r.expires_in),refreshLife=refreshTime(r.refresh_token_expires_in);
+   if(!access||!refreshLife)throw fail(502,'Invalid AI authorization expiry information.');
+   const now=clock(),stamp=new Date(now).toISOString();
+   db.prepare("INSERT INTO ebay_ai_oauth_connection (id,seller_user_id,seller_username,token_cipher,access_expires_at,refresh_expires_at,connected_at,updated_at) VALUES (1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET seller_user_id=excluded.seller_user_id,seller_username=excluded.seller_username,token_cipher=excluded.token_cipher,access_expires_at=excluded.access_expires_at,refresh_expires_at=excluded.refresh_expires_at,updated_at=excluded.updated_at")
+   .run(user.userId,user.username,encrypt({accessToken:r.access_token,refreshToken:r.refresh_token}),now+access*1000,now+refreshLife*1000,stamp,stamp);
+   return {connected:true,sellerUsername:user.username,ai:true};
+ }
+ async function getAIToken(){
+   requireConfig();let row=db.prepare('SELECT * FROM ebay_ai_oauth_connection WHERE id=1').get();
+   if(!row)throw fail(409,'eBay AI access not yet connected.');
+   if(row.access_expires_at<=clock()+60000){
+     const current=decrypt(row.token_cipher);
+     if(row.refresh_expires_at<=clock()+120000)throw fail(409,'eBay AI authorization expired. Reconnect eBay AI.');
+     const r=await requestTokens({grant_type:'refresh_token',refresh_token:current.refreshToken,scope:[...SCOPES,MAPPING_SCOPE].join(' ')});
+     if(!tokenValid(r.access_token)||!refreshTime(r.expires_in))throw fail(502,'Unable to refresh eBay AI access.');
+     const updated=encrypt({accessToken:r.access_token,refreshToken:tokenValid(r.refresh_token)?r.refresh_token:current.refreshToken});
+     const result=db.prepare('UPDATE ebay_ai_oauth_connection SET token_cipher=?,access_expires_at=?,updated_at=? WHERE id=1 AND token_cipher=?').run(updated,clock()+Number(r.expires_in)*1000,new Date(clock()).toISOString(),row.token_cipher);
+     if(result.changes!==1)throw fail(409,'AI token updated concurrently; retry.');
+     row=db.prepare('SELECT * FROM ebay_ai_oauth_connection WHERE id=1').get();
+   }
+   return decrypt(row.token_cipher).accessToken;
  }
  function consume(state){
    if(typeof state!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(state))throw fail(400,'Invalid authorization state. Start again from SHUKCHIC Admin.');
@@ -169,5 +215,5 @@ export function createEbayOAuth({
    db.prepare('DELETE FROM ebay_oauth_states').run();
    return {disconnected:true};
  }
- return {status,start,complete,refresh,getAccessToken,disconnect,probe};
+ return {status,start,complete,refresh,getAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken};
 }
