@@ -15,6 +15,7 @@
   html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I have physically verified the brand, condition and any details entered above.</label><div class="editor-actions">';
   html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(gates.length?'disabled':'')+'>Create starter draft</button>';
   html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(gates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
+  html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Access check pending: eBay Inventory Mapping needs its own seller permission. We will not request it until the application supports it. Your existing eBay connection stays unchanged.</p><a href="https://developer.ebay.com/develop/api/sell/inventory_mapping" target="_blank" rel="noopener noreferrer">eBay Inventory Mapping documentation</a></div>';
   html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay Inventory Mapping will be a later integration.')+'</p></form>';
   if(d){
    const approved=d.status==='REVIEWED';
