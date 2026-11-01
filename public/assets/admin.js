@@ -25,6 +25,9 @@ async function loadEbayStatus(){
  try{
   const info=await api('/api/admin/ebay/status');
   const oauth=info.oauth||{};
+  const ai=info.ai||{};
+  const aiBtn=$('#ebayAIConnectBtn'),aiStatus=$('#ebayAIStatus');
+  if(aiBtn){aiBtn.hidden=!oauth.connected;aiBtn.textContent=ai.connected?'Renew eBay AI permission':'Connect eBay AI';aiStatus.textContent=ai.connected?'AI authorized · preview only':'AI permission not connected';}
   start.hidden=!oauth.configured;
   start.textContent=oauth.connected?'Reconnect eBay seller':'Connect eBay seller';
   $('#ebayOrdersBtn').hidden=!oauth.connected;
@@ -148,6 +151,15 @@ $('#ebayProbeBtn')?.addEventListener('click',async()=>{
   output.textContent=result.reachable?'PASS: eBay Production API issued an application token. Seller authorization still needs completion.':'FAILED: '+String(result.status||'Unknown API error');
  }catch(err){output.textContent='FAILED: '+err.message;}
  finally{btn.disabled=false;}
+});
+$('#ebayAIConnectBtn')?.addEventListener('click',async()=>{
+ const btn=$('#ebayAIConnectBtn');btn.disabled=true;
+ try{
+  const result=await api('/api/admin/ebay/oauth/ai-start',{method:'POST',body:'{}'});
+  const u=new URL(result.authorizationUrl);
+  if(u.origin!=='https://auth.ebay.com')throw Error('Invalid eBay authorization destination.');
+  window.location.assign(u.toString());
+ }catch(e){alert(e.message);btn.disabled=false;}
 });
 $('#ebayConnectBtn')?.addEventListener('click',async()=>{
  const btn=$('#ebayConnectBtn');btn.disabled=true;
