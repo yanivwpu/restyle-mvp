@@ -91,6 +91,7 @@ const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,e
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
 const ebayOAuth=createEbayOAuth({db});
+const ebayMapping=createEbayMapping({db,oauth:ebayOAuth});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
 function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
@@ -340,6 +341,21 @@ async function handle(req,res){
      if(action==='record-payment')return json(res,200,settlements.markExternallyPaid(item,payload));
    }
    return problem(res,405,'Method not allowed.');
+ }
+ const mappingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/ebay-ai(?:\/(start|poll))?$/);
+ if(mappingRoute){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(mappingRoute[1]);
+  if(!item)return problem(res,404,'Submission not found.');
+  const action=mappingRoute[2];
+  if(req.method==='GET'&&!action)return json(res,200,{task:ebayMapping.inspect(item),connected:ebayOAuth.aiStatus().connected});
+  if(req.method==='POST'&&action){
+   if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+   if(!throttle(req,'ebay_ai_'+action,8,15*60_000))return problem(res,429,'Too many AI preview requests.');
+   if(action==='start'){const details=await readJson(req,5000);return json(res,200,{task:await ebayMapping.start(item,signing.state(item.id),details)});}
+   if(action==='poll')return json(res,200,{task:await ebayMapping.poll(item)});
+  }
+  return problem(res,405,'Method not allowed.');
  }
  const listingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/listing(?:\/(generate|save|approve))?$/);
  if(listingRoute){
