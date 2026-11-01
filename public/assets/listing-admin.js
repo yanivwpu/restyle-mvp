@@ -15,7 +15,7 @@
   html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I have physically verified the brand, condition and any details entered above.</label><div class="editor-actions">';
   html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(gates.length?'disabled':'')+'>Create starter draft</button>';
   html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(gates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
-  html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Access check pending: eBay Inventory Mapping needs its own seller permission. We will not request it until the application supports it. Your existing eBay connection stays unchanged.</p><a href="https://developer.ebay.com/develop/api/sell/inventory_mapping" target="_blank" rel="noopener noreferrer">eBay Inventory Mapping documentation</a></div>';
+  html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Uses verified product facts and an eBay AI task; customer photos remain private. No listing is created on eBay.</p><button class="btn btn-outline" type="button" id="mappingStart" '+(gates.length?'disabled':'')+'>Generate eBay recommendations</button> <button class="btn btn-outline" type="button" id="mappingCheck">Check results</button><div id="mappingResult" class="save-notice" role="status"></div></div>';
   html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay Inventory Mapping will be a later integration.')+'</p></form>';
   if(d){
    const approved=d.status==='REVIEWED';
@@ -33,6 +33,28 @@
   html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
   const feedback=div.querySelector('#listingFeedback');
+  const mappingNode=div.querySelector('#mappingResult');
+  async function mapping(op,details){
+   mappingNode.textContent='Checking eBay AI…';
+   const url='/api/admin/submissions/'+encodeURIComponent(id)+'/ebay-ai'+(op?'/'+op:'');
+   const response=await fetch(url,{method:op?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(op?{body:JSON.stringify(details||{})}:{})});
+   const data=await response.json();if(!response.ok)throw Error(data.error||'eBay AI unavailable');
+   const t=data.task;
+   mappingNode.replaceChildren();
+   if(!t){mappingNode.textContent='No eBay AI request yet.';return;}
+   const message=document.createElement('p');message.textContent='eBay AI: '+t.status+(t.status==='PENDING'?' — check results again after processing':'');mappingNode.append(message);
+   if(t.preview){const p=t.preview;for(const [name,value] of [['Suggested title',p.title],['eBay category',p.categoryName+' ('+p.categoryId+')'],['Description',p.description],['Reference',p.mappingReferenceId]]){const e=document.createElement('p');e.textContent=name+': '+value;mappingNode.append(e);}const reminder=document.createElement('strong');reminder.textContent='Suggestions only. Review and copy into the draft before approving. No eBay listing published.';mappingNode.append(reminder);}
+  }
+  div.querySelector('#mappingStart')?.addEventListener('click',async()=>{
+   const form=div.querySelector('#listingGenerate');
+   try{
+    if(!form.elements.confirmPhysicalFacts.checked)throw Error('Confirm verified item facts first.');
+    await mapping('start',{color:form.elements.color.value,material:form.elements.material.value});
+   }catch(e){mappingNode.textContent=e.message;}
+  });
+  div.querySelector('#mappingCheck')?.addEventListener('click',async()=>{try{await mapping('poll');}catch(e){mappingNode.textContent=e.message;}});
+  mapping('').catch(e=>{mappingNode.textContent=e.message;});
+
   async function act(op,payload){
    feedback.textContent='Processing…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
