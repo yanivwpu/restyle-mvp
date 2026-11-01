@@ -7,19 +7,19 @@
   const target=document.querySelector('#editForm');if(!target)return;
   document.querySelector('#restyleListing')?.remove();
   const div=document.createElement('section');div.id='restyleListing';div.className='detail-editor';
-  const d=state.draft,gates=state.gates||[],facts=d?.verifiedFacts||{};
+  const d=state.draft,gates=state.gates||[],draftGates=state.draftGates||gates,facts=d?.verifiedFacts||{};
   let html='<h3>AI eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Prepare a factual title, description, category suggestion and item specifics. Samantha reviews every draft before future eBay publishing is enabled.</p>';
-  if(gates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(gates.join(' · '))+'</p>';
-  else html+='<p class="save-notice">Warehouse and agreement checks passed. Verify item facts below before generating.</p>';
+  if(draftGates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(draftGates.join(' · '))+'</p>';
+  else html+='<p class="save-notice">Agreement and submission checks passed. You can prepare a preliminary draft; final approval still requires warehouse inspection.</p>';
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
-  html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I have physically verified the brand, condition and any details entered above.</label><div class="editor-actions">';
-  html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(gates.length?'disabled':'')+'>Create starter draft</button>';
-  html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(gates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
+  html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I confirm these details come from the submitted information or physical inspection; unverified claims must be checked before final approval.</label><div class="editor-actions">';
+  html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(draftGates.length?'disabled':'')+'>Create starter draft</button>';
+  html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(draftGates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
   html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Uses verified product facts and an eBay AI task; customer photos remain private. No listing is created on eBay.</p><button class="btn btn-outline" type="button" id="mappingStart" '+(gates.length?'disabled':'')+'>Generate eBay recommendations</button> <button class="btn btn-outline" type="button" id="mappingCheck">Check results</button><div id="mappingResult" class="save-notice" role="status"></div></div>';
   html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay Inventory Mapping will be a later integration.')+'</p></form>';
   if(d){
    const approved=d.status==='REVIEWED';
-   html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft awaiting staff review')+'</strong><p>'+(approved?'The draft is approved inside SHUKCHIC only. No eBay listing has been created. Editing will return it to draft.':'Check the title, exact item condition, recommended category and price before marking it reviewed.')+'</p></div>';
+   html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft awaiting staff review')+'</strong><p>'+(approved?'The draft is approved inside SHUKCHIC only. No eBay listing has been created. Editing will return it to draft.':'Check the title and description now. Final approval unlocks after warehouse receipt, inspection, SKU, bin and price/category checks.')+'</p></div>';
    html+='<form id="listingEdit"><h3>Review listing draft · '+esc(d.source==='ai'?'AI suggestion':'starter template')+'</h3><div class="editor-grid">';
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
@@ -27,7 +27,8 @@
    html+=field('eBay category ID (staff confirmed)','categoryId',d.category_id);
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
-   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
+   if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';
+   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
    html+='<p class="detail-meta">Category ID and price must be confirmed by staff. This is an internal review only: no listings are sent to eBay.</p></form>';
   }
   html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
