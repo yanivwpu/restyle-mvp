@@ -32,7 +32,7 @@ export function createListingDrafts({db,signing,audit}){
  if(!clean(sub.bin_location))issues.push('Warehouse bin is required');
  if(!db.prepare('SELECT COUNT(*) AS n FROM photos WHERE submission_id=?').get(sub.id).n)issues.push('Item photograph is required');
  return issues;}
- function inspect(sub){return {draft:draft(sub.id),gates:gates(sub),aiAvailable:!!process.env.OPENAI_API_KEY,ebayConnected:false,publishingEnabled:false};}
+ function inspect(sub){return {draft:draft(sub.id),gates:gates(sub),aiAvailable:!!process.env.OPENAI_API_KEY,ebayConnected:false,publishingEnabled:false,ebayMapping:{enabled:false,marketplace:'EBAY_US',status:'ACCESS_NOT_VERIFIED',message:'eBay Inventory Mapping requires a separate sell.inventory.mapping authorization. Existing seller scopes must not be modified until the app permission is confirmed. No eBay AI preview was requested.',documentation:'https://developer.ebay.com/develop/api/sell/inventory_mapping'}};}
  async function generate(sub,body){const issues=gates(sub);if(issues.length)throw Object.assign(new Error(issues.join('; ')),{status:409});
  if(body.confirmPhysicalFacts!==true)throw Object.assign(new Error('Staff must confirm the product details were verified in person.'),{status:400});
  const f=factsFor(sub,body),mode=body.mode==='ai'?'ai':'starter',result=mode==='ai'?await generateAI(f):starter(f);
