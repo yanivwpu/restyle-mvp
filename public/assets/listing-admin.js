@@ -23,9 +23,9 @@
    html+=field('eBay category ID (staff confirmed)','categoryId',d.category_id);
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
-   if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';
-   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
-   html+='<p class="detail-meta">Category ID and price must be confirmed by staff. This is an internal review only: no listings are sent to eBay.</p></form>';
+   if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';if(!d.price_cents||!d.category_id)html+='<p class="detail-meta">Before approval: enter an asking price and confirm the correct eBay category ID. You can save now without them.</p>';
+   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length||!d.price_cents||!d.category_id?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
+   html+='<p class="detail-meta">Save your work anytime. Category ID, asking price and warehouse verification are required only for approval. Nothing is published to eBay.</p></form>';
   }
   html+='<div class="listing-mapping-info"><strong>AI listing preparation</strong><p id="mappingResult" role="status">Checking the draft…</p><button class="btn btn-outline" id="mappingRegenerate" type="button">Regenerate AI listing</button></div>';  html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
@@ -76,7 +76,7 @@
    feedback.textContent='Processing…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
    const data=await result.json();if(!result.ok)throw Error(data.error||'Unable to complete listing action.');
-   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Saved in SHUKCHIC. Nothing has been published on eBay.';
+   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent=op==='save'?'Draft saved successfully. You can continue editing later.':'Draft approved internally. Nothing published to eBay.';
   }
   const edit=div.querySelector('#listingEdit');
   if(edit){
