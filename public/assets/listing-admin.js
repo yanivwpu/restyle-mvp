@@ -81,6 +81,7 @@
   if(edit){
    const main=edit.querySelector('#ebayCategoryMain'),sub=edit.querySelector('#ebayCategorySub'),hint=edit.querySelector('#ebayCategoryHint');
    const itemType=div.querySelector('[name=itemType]')?.value?.trim()||d.category_hint||'jewelry';
+   const savedCategoryId=String(d.category_id||'');
    let paths=[];
    const wrap=sub.parentNode;
    function clearSelection(){edit.elements.categoryId.value='';edit.elements.categorySuggestion.value='';}
@@ -113,7 +114,24 @@
        paths=(data.categories||[]).map(c=>({id:c.id,name:c.name,parts:[...(c.path||'Jewelry & Watches').split(' › ').filter(Boolean),c.name]}));
        if(!paths.length){hint.textContent='No matching categories found.';return;}
        renderLevel(0,[]);
-       hint.textContent='Choose each level until you reach the final subcategory.';
+       const saved=paths.find(p=>p.id===savedCategoryId);
+       if(saved){
+         for(let level=0;level<saved.parts.length;level++){
+           const select=level===0?main:level===1?sub:wrap.querySelector('[data-category-level="'+level+'"]');
+           if(!select)break;
+           select.value=saved.parts[level];
+           select.dispatchEvent(new Event('change'));
+         }
+         edit.elements.categoryId.value=saved.id;
+         edit.elements.categorySuggestion.value=saved.name;
+         hint.textContent='Selected: '+saved.parts.join(' › ');
+       }else if(savedCategoryId){
+         // The limited eBay suggestions may not contain a previously saved category.
+         // Keep its ID and label instead of silently clearing or replacing it.
+         edit.elements.categoryId.value=savedCategoryId;
+         edit.elements.categorySuggestion.value=d.category_hint||'';
+         hint.textContent='Saved category: '+(d.category_hint||'eBay category')+' (#'+savedCategoryId+'). Choose a category to change it.';
+       }else hint.textContent='Choose each level until you reach the final subcategory.';
      }catch(err){hint.textContent='eBay category lookup unavailable: '+err.message;}
    }
    if(d.category_id)hint.textContent='Saved eBay category #'+d.category_id+'. Change the dropdowns only if needed.';
