@@ -65,8 +65,8 @@ export function createListingDrafts({db,signing,audit}){
  const title=clean(body.title,80),desc=clean(body.description,5000),hint=clean(body.categorySuggestion,180),cid=clean(body.categoryId,20),price=Number(body.price);
  if(title.length<5||desc.length<30)throw Object.assign(new Error('Title and description required.'),{status:400});
  if(cid&&!/^[0-9]{1,20}$/.test(cid))throw Object.assign(new Error('eBay category ID must be numeric.'),{status:400});
- if(!Number.isFinite(price)||price<=0||price>100000)throw Object.assign(new Error('Valid positive asking price required.'),{status:400});
- const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET title=?,description=?,category_hint=?,category_id=?,price_cents=?,status='DRAFT',reviewed_at=NULL,updated_at=? WHERE submission_id=?").run(title,desc,hint,cid,Math.round(price*100),now,sub.id);
+ if(clean(body.price)&&(!Number.isFinite(price)||price<=0||price>100000))throw Object.assign(new Error('Enter a positive asking price, or leave it blank to save for later.'),{status:400});
+ const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET title=?,description=?,category_hint=?,category_id=?,price_cents=?,status='DRAFT',reviewed_at=NULL,updated_at=? WHERE submission_id=?").run(title,desc,hint,cid,clean(body.price)?Math.round(price*100):null,now,sub.id);
  audit(sub.id,'LISTING DRAFT EDITED');return inspect(sub);}
  function approve(sub){if(gates(sub).length)throw Object.assign(new Error('Listing gates not satisfied.'),{status:409});const d=draft(sub.id);
  if(!d||!d.category_id||!d.price_cents||!d.title||!d.description)throw Object.assign(new Error('Save the price, eBay category ID, title and description first.'),{status:409});
