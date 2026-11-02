@@ -53,6 +53,7 @@
         data=await request('poll',{itemType:div.querySelector('[name=itemType]')?.value||''});
       }
       if(data.task?.status==='COMPLETED'){
+        if(!d && !data.listing)data=await request('poll',{itemType:div.querySelector('[name=itemType]')?.value||''});
         if(!d && data.listing?.draft){stopped=true;render(id,data.listing);return;}
         status('AI draft ready. Review and edit the listing details above.');
         return;
