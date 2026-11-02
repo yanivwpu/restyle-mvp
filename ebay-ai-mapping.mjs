@@ -16,9 +16,9 @@ export function createEbayMapping({db,oauth,photoUrls=()=>[],fetcher=fetch}){
   if(!oauth.aiStatus().connected)throw fail(409,'Connect eBay AI under connection settings.');
   if(agreement?.state!=='SIGNED'||!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))throw fail(409,'Signed agreement and accepted consignment are required.');
   const previous=inspect(sub);if(previous&&['PENDING','COMPLETED'].includes(previous.status)&&details?.regenerate!==true)return previous;
-  const title=[sub.brand,sub.category,sub.condition,sub.description].filter(Boolean).join(' ').slice(0,250);
+  const title=[sub.brand,details?.itemType||sub.category,sub.condition,sub.description].filter(Boolean).join(' ').slice(0,250);
   const images=photoUrls(sub);if(!images.length)throw fail(409,'At least one approved product photo is required.');
-  const aspects=[['Brand',sub.brand],['Condition',sub.condition],['Color',details?.color],['Material',details?.material]].filter(x=>x[1]).map(([name,value])=>({name,values:[String(value).slice(0,100)]}));
+  const aspects=[['Product Type',details?.itemType],['Brand',sub.brand],['Condition',sub.condition],['Color',details?.color],['Material',details?.material]].filter(x=>x[1]).map(([name,value])=>({name,values:[String(value).slice(0,100)]}));
   const data=await call(await oauth.getAIToken(),mutation,{input:{externalProducts:[{sku:sub.sku||sub.id,title,images,aspects}]}});
   const task=data?.startListingPreviewsCreation?.listingPreviewsCreationTask?.id;
   if(!task||!/^[A-Za-z0-9_-]{1,25}$/.test(task))throw fail(502,'eBay did not return a valid task ID.');
