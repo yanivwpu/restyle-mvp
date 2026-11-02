@@ -366,7 +366,7 @@ async function handle(req,res){
    }
    return problem(res,405,'Method not allowed.');
  }
- const mappingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/ebay-ai(?:\/(start|poll))?$/);
+ const mappingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/ebay-ai(?:\/(start|poll|import))?$/);
  if(mappingRoute){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(mappingRoute[1]);
@@ -378,6 +378,12 @@ async function handle(req,res){
    if(!throttle(req,'ebay_ai_'+action,8,15*60_000))return problem(res,429,'Too many AI preview requests.');
    if(action==='start'){const details=await readJson(req,5000);return json(res,200,{task:await ebayMapping.start(item,signing.state(item.id),details)});}
    if(action==='poll')return json(res,200,{task:await ebayMapping.poll(item)});
+   if(action==='import'){
+    const body=await readJson(req,2000),task=ebayMapping.inspect(item);
+    if(task?.status!=='COMPLETED'||!task.preview)return problem(res,409,'A completed eBay AI preview is required.');
+    return json(res,200,listingDrafts.importEbay(item,task.preview,body));
+   }
+
   }
   return problem(res,405,'Method not allowed.');
  }
