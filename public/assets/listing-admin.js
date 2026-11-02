@@ -14,7 +14,7 @@
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified item type','itemType',facts.category||'')+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
   html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I confirm these details come from the submitted information or physical inspection; unverified claims must be checked before final approval.</label><div class="editor-actions">';
   html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(draftGates.length?'disabled':'')+'>Create starter draft</button>';
-  html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(draftGates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
+  html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(draftGates.length||!state.aiAvailable?'disabled':'')+' >✨ Generate AI draft</button></div></form>';
 
   if(d){
    const approved=d.status==='REVIEWED';
@@ -31,7 +31,7 @@
    html+='<p class="detail-meta">Category ID and price must be confirmed by staff. This is an internal review only: no listings are sent to eBay.</p></form>';
   }
   html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Uses product details and expiring photo links visible only to anyone holding those temporary links. eBay may process and retain submitted images under its policies. No listing is created.</p><button class="btn btn-outline" type="button" id="mappingStart" '+(draftGates.length?'disabled':'')+'>Generate eBay recommendations</button> <button class="btn btn-outline" type="button" id="mappingCheck">Check results</button><div id="mappingResult" class="save-notice" role="status"></div></div>';
-  html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay AI recommendations are connected; use the results to edit your listing.')+'</p></form>';
+  html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay AI recommendations are connected; use the results to edit your listing.')+'</p>';
   html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
   const feedback=div.querySelector('#listingFeedback');
