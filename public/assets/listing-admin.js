@@ -19,9 +19,7 @@
    html+='<form id="listingEdit"><h3>Listing details · '+esc(d.source==='ebay_ai'?'eBay AI draft':d.source==='ai'?'AI draft':'starter draft')+'</h3><div class="editor-grid">';
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
-   html+=field('Category suggestion','categorySuggestion',d.category_hint);
-   html+='<label class="span-all">Find eBay category<input name="categorySearch" id="ebayCategorySearch" placeholder="Search ear cuffs, earrings, handbags…" value="'+esc(d.category_hint||'')+'"><small>Search eBay’s official categories, then choose the correct one. No category numbers to remember.</small><select id="ebayCategoryChoices"><option value="">Search to see matching eBay categories</option></select></label>';
-   html+='<label>Selected eBay category<input name="categoryDisplay" id="ebayCategoryDisplay" value="'+esc(d.category_id?d.category_hint+' (#'+d.category_id+')':'Not selected yet')+'" readonly><input type="hidden" name="categoryId" value="'+esc(d.category_id)+'"></label>';
+   html+='<label class="span-all">eBay category<div class="editor-grid"><select id="ebayCategoryMain"><option value="">Choose category</option></select><select id="ebayCategorySub"><option value="">Choose subcategory</option></select></div><small id="ebayCategoryHint">Finding matching eBay categories…</small><input type="hidden" name="categorySuggestion" value="'+esc(d.category_hint||'')+'"><input type="hidden" name="categoryId" value="'+esc(d.category_id||'')+'"></label>';
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
    if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';if(!d.price_cents||!d.category_id)html+='<p class="detail-meta">Before approval: enter an asking price and confirm the correct eBay category ID. You can save now without them.</p>';
@@ -81,26 +79,35 @@
   }
   const edit=div.querySelector('#listingEdit');
   if(edit){
-   const q=edit.querySelector('#ebayCategorySearch'),choices=edit.querySelector('#ebayCategoryChoices');
-   let debounce=null,sequence=0;
-   async function searchCategories(){
-    const query=q.value.trim(),turn=++sequence;
-    if(query.length<2){choices.replaceChildren(new Option('Enter at least 2 characters',''));return;}
-    choices.replaceChildren(new Option('Searching eBay categories…',''));
+   const main=edit.querySelector('#ebayCategoryMain'),sub=edit.querySelector('#ebayCategorySub'),hint=edit.querySelector('#ebayCategoryHint');
+   const itemType=div.querySelector('[name=itemType]')?.value?.trim()||d.category_hint||'jewelry';
+   let results=[];
+   async function loadCategories(){
+    hint.textContent='Finding eBay categories…';
     try{
-     const response=await fetch('/api/admin/ebay/category-suggestions?q='+encodeURIComponent(query),{credentials:'same-origin'});
-     const payload=await response.json();
-     if(turn!==sequence)return;
-     if(!response.ok)throw Error(payload.error||'Category search unavailable');
-     choices.replaceChildren(new Option('Choose a category',''));
-     for(const c of payload.categories||[]){const opt=new Option((c.path?c.path+' › ':'')+c.name,c.id);opt.dataset.name=c.name;choices.add(opt);}
-     if(choices.options.length===1)choices.options[0].textContent='No matching categories. Try a broader term.';
-    }catch(err){if(turn===sequence)choices.replaceChildren(new Option(err.message,' '));}
+     const resp=await fetch('/api/admin/ebay/category-suggestions?q='+encodeURIComponent(itemType),{credentials:'same-origin'});
+     const payload=await resp.json();if(!resp.ok)throw Error(payload.error||'eBay category search unavailable');
+     results=payload.categories||[];
+     main.replaceChildren(new Option('Choose category',''));
+     const categories=[...new Set(results.map(c=>(c.path||'Jewelry & Watches').split(' › ')[0]))];
+     for(const c of categories)main.add(new Option(c,c));
+     hint.textContent=results.length?'Choose category, then subcategory.':'No category matches. Verify item type and reopen listing.';
+     if(results.length===1){main.value=categories[0];main.dispatchEvent(new Event('change'));}
+    }catch(err){hint.textContent='Could not load eBay categories: '+err.message;}
    }
-   q.addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(searchCategories,350);});
-   choices.addEventListener('change',()=>{const option=choices.selectedOptions[0];if(!option?.value.trim())return;edit.elements.categoryId.value=option.value;edit.querySelector('#ebayCategoryDisplay').value=option.dataset.name+' (#'+option.value+')';edit.elements.categorySuggestion.value=option.dataset.name;});
-   if(!d.category_id&&q.value.trim().length>1)searchCategories();
-
+   main.addEventListener('change',()=>{
+     sub.replaceChildren(new Option('Choose subcategory',''));
+     for(const c of results.filter(c=>(c.path||'Jewelry & Watches').split(' › ')[0]===main.value)){
+       sub.add(new Option((c.path?c.path+' › ':'')+c.name,c.id));
+     }
+   });
+   sub.addEventListener('change',()=>{
+     const c=results.find(x=>x.id===sub.value);if(!c)return;
+     edit.elements.categoryId.value=c.id;edit.elements.categorySuggestion.value=c.name;
+     hint.textContent='Selected: '+c.name;
+   });
+   if(d.category_id){hint.textContent='Saved category ID '+d.category_id+'. Choose a new category to change it.';}
+   loadCategories();
    edit.addEventListener('submit',async event=>{
     event.preventDefault();const b={};for(const name of ['title','price','description','categorySuggestion','categoryId'])b[name]=edit.elements[name].value;
     try{await act('save',b);}catch(err){feedback.textContent=err.message;}

@@ -201,6 +201,7 @@ export function createEbayOAuth({
    if(!tokenValid(secrets.accessToken))throw fail(503,'Stored eBay access token was invalid.');
    return secrets.accessToken;
  }
+ async function getAppAccessToken(){const r=await requestTokens({grant_type:'client_credentials',scope:'https://api.ebay.com/oauth/api_scope'});if(!tokenValid(r.access_token))throw fail(502,'eBay application token unavailable');return r.access_token;}
  async function probe(){
    requireConfig();
    try{
@@ -215,5 +216,5 @@ export function createEbayOAuth({
    db.prepare('DELETE FROM ebay_oauth_states').run();
    return {disconnected:true};
  }
- return {status,start,complete,refresh,getAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken};
+ return {status,start,complete,refresh,getAccessToken,getAppAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken};
 }

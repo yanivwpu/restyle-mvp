@@ -372,7 +372,7 @@ async function handle(req,res){
   if(!throttle(req,'ebay_category_search',35,15*60_000))return problem(res,429,'Too many category searches.');
   const q=(url.searchParams.get('q')||'').trim();
   if(q.length<2||q.length>90)return problem(res,400,'Enter 2–90 characters to search categories.');
-  const token=await ebayOAuth.getAccessToken();
+  const token=await ebayOAuth.getAppAccessToken();
   const headers={Authorization:'Bearer '+token,Accept:'application/json','X-EBAY-C-MARKETPLACE-ID':'EBAY_US'};
   const base='https://api.ebay.com/commerce/taxonomy/v1';
   const treeResp=await fetch(base+'/get_default_category_tree_id?marketplace_id=EBAY_US',{headers,signal:AbortSignal.timeout(9000)});
