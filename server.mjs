@@ -378,7 +378,7 @@ async function handle(req,res){
   const treeResp=await fetch(base+'/get_default_category_tree_id?marketplace_id=EBAY_US',{headers,signal:AbortSignal.timeout(9000)});
   if(!treeResp.ok)return problem(res,502,'eBay category tree unavailable ('+treeResp.status+').');
   const tree=await treeResp.json();
-  if(!/^\\d+$/.test(String(tree.categoryTreeId||'')))return problem(res,502,'eBay returned invalid category tree.');
+  if(!/^\d+$/.test(String(tree.categoryTreeId||'')))return problem(res,502,'eBay returned invalid category tree.');
   const response=await fetch(base+'/category_tree/'+tree.categoryTreeId+'/get_category_suggestions?q='+encodeURIComponent(q),{headers,signal:AbortSignal.timeout(9000)});
   if(!response.ok)return problem(res,502,'eBay category search unavailable ('+response.status+').');
   const payload=await response.json();
@@ -386,7 +386,7 @@ async function handle(req,res){
    id:String(v.category?.categoryId||''),
    name:String(v.category?.categoryName||''),
    path:(v.categoryTreeNodeAncestors||[]).map(a=>a.categoryName||a.category?.categoryName||'').filter(Boolean).join(' › ')
-  })).filter(v=>/^\\d+$/.test(v.id)&&v.name);
+  })).filter(v=>/^\d+$/.test(v.id)&&v.name);
   return json(res,200,{categories,marketplace:'EBAY_US',treeVersion:String(tree.categoryTreeVersion||'')});
  }
  const mappingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/ebay-ai(?:\/(start|poll|import))?$/);
