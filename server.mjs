@@ -366,6 +366,29 @@ async function handle(req,res){
    }
    return problem(res,405,'Method not allowed.');
  }
+ const taxonomyPath='/api/admin/ebay/category-suggestions';
+ if(req.method==='GET'&&p===taxonomyPath){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  if(!throttle(req,'ebay_category_search',35,15*60_000))return problem(res,429,'Too many category searches.');
+  const q=(url.searchParams.get('q')||'').trim();
+  if(q.length<2||q.length>90)return problem(res,400,'Enter 2–90 characters to search categories.');
+  const token=await ebayOAuth.getAccessToken();
+  const headers={Authorization:'Bearer '+token,Accept:'application/json','X-EBAY-C-MARKETPLACE-ID':'EBAY_US'};
+  const base='https://api.ebay.com/commerce/taxonomy/v1';
+  const treeResp=await fetch(base+'/get_default_category_tree_id?marketplace_id=EBAY_US',{headers,signal:AbortSignal.timeout(9000)});
+  if(!treeResp.ok)return problem(res,502,'eBay category tree unavailable ('+treeResp.status+').');
+  const tree=await treeResp.json();
+  if(!/^\\d+$/.test(String(tree.categoryTreeId||'')))return problem(res,502,'eBay returned invalid category tree.');
+  const response=await fetch(base+'/category_tree/'+tree.categoryTreeId+'/get_category_suggestions?q='+encodeURIComponent(q),{headers,signal:AbortSignal.timeout(9000)});
+  if(!response.ok)return problem(res,502,'eBay category search unavailable ('+response.status+').');
+  const payload=await response.json();
+  const categories=(payload.categorySuggestions||[]).slice(0,20).map(v=>({
+   id:String(v.category?.categoryId||''),
+   name:String(v.category?.categoryName||''),
+   path:(v.categoryTreeNodeAncestors||[]).map(a=>a.categoryName||a.category?.categoryName||'').filter(Boolean).join(' › ')
+  })).filter(v=>/^\\d+$/.test(v.id)&&v.name);
+  return json(res,200,{categories,marketplace:'EBAY_US',treeVersion:String(tree.categoryTreeVersion||'')});
+ }
  const mappingRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/ebay-ai(?:\/(start|poll|import))?$/);
  if(mappingRoute){
   if(!admin(req))return problem(res,401,'Admin login required.');
