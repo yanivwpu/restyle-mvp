@@ -45,7 +45,23 @@ export function createListingDrafts({db,signing,audit}){
  const checks=(result.checks||[]).slice(0,14).map(x=>clean(x,250));if(!sub.received_verified)checks.unshift('Preliminary draft: item and condition not yet physically inspected');const date=new Date().toISOString();
  const prior=draft(sub.id);db.prepare("INSERT INTO ebay_listing_drafts (submission_id,status,source,title,description,category_hint,aspects_json,checks_json,verified_facts_json,price_cents,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET status='DRAFT',source=excluded.source,title=excluded.title,description=excluded.description,category_hint=excluded.category_hint,aspects_json=excluded.aspects_json,checks_json=excluded.checks_json,verified_facts_json=excluded.verified_facts_json,price_cents=excluded.price_cents,reviewed_at=NULL,updated_at=excluded.updated_at").run(sub.id,'DRAFT',mode,title,desc,cat,JSON.stringify(asp),JSON.stringify(checks),JSON.stringify(f),prior?.price_cents??null,date,date);
  audit(sub.id,'LISTING '+mode.toUpperCase()+' DRAFT GENERATED');return inspect(sub);}
- function save(sub,body){if(gates(sub).length)throw Object.assign(new Error('Listing safety gates not satisfied.'),{status:409});if(!draft(sub.id))throw Object.assign(new Error('Generate a draft first.'),{status:409});
+ function importEbay(sub,preview,body={}){
+  const issues=draftGates(sub);if(issues.length)throw Object.assign(new Error(issues.join('; ')),{status:409});
+  if(!preview?.title||!preview?.description)throw Object.assign(new Error('eBay returned an incomplete recommendation.'),{status:409});
+  const existing=draft(sub.id);
+  if(existing&&body.replace!==true)return inspect(sub);
+  const itemType=clean(body.itemType,70)||clean(sub.category,70);
+  const mismatched=itemType.toLowerCase()==='ear cuff'&&/necklace|pendant/i.test(String(preview.categoryName||''));
+  const title=clean([sub.brand,itemType,sub.condition].filter(Boolean).join(' '),80);
+  const description=[clean(sub.brand,100)+' '+itemType, 'Condition: '+clean(sub.condition,80),clean(sub.description,700), 'AI suggested description (verify all claims before using): '+clean(preview.description,3000)].filter(Boolean).join('\n');
+  const checks=['Verify category and item specifics before approval','Verify all AI claims; photos do not establish materials or authenticity','Confirm price and shipping terms',...(mismatched?['CATEGORY CONFLICT: eBay suggested '+clean(preview.categoryName,110)+' but staff confirmed '+itemType]:[])];
+  const now=new Date().toISOString(),price=existing?.price_cents??null;
+  db.prepare("INSERT INTO ebay_listing_drafts (submission_id,status,source,title,description,category_hint,category_id,aspects_json,checks_json,verified_facts_json,price_cents,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET status='DRAFT',source=excluded.source,title=excluded.title,description=excluded.description,category_hint=excluded.category_hint,category_id=excluded.category_id,aspects_json=excluded.aspects_json,checks_json=excluded.checks_json,verified_facts_json=excluded.verified_facts_json,price_cents=excluded.price_cents,reviewed_at=NULL,updated_at=excluded.updated_at")
+   .run(sub.id,'DRAFT','ebay_ai',title,description,mismatched?itemType:clean(preview.categoryName,180),mismatched?'':clean(preview.categoryId,20),JSON.stringify({Brand:sub.brand,'Item type':itemType,Condition:sub.condition}),JSON.stringify(checks),JSON.stringify({category:itemType,condition:sub.condition,source:'customer submission; pending warehouse verification'}),price,now,now);
+  audit(sub.id,'EBAY AI PREVIEW IMPORTED INTO EDITABLE DRAFT (NOT PUBLISHED)');
+  return inspect(sub);
+ }
+ function save(sub,body){if(draftGates(sub).length)throw Object.assign(new Error('Listing draft gates not satisfied.'),{status:409});if(!draft(sub.id))throw Object.assign(new Error('Generate a draft first.'),{status:409});
  const title=clean(body.title,80),desc=clean(body.description,5000),hint=clean(body.categorySuggestion,180),cid=clean(body.categoryId,20),price=Number(body.price);
  if(title.length<5||desc.length<30)throw Object.assign(new Error('Title and description required.'),{status:400});
  if(cid&&!/^[0-9]{1,20}$/.test(cid))throw Object.assign(new Error('eBay category ID must be numeric.'),{status:400});
@@ -57,5 +73,5 @@ export function createListingDrafts({db,signing,audit}){
  if(d.status==='REVIEWED')return inspect(sub);
  if(!Object.keys(d.verifiedFacts||{}).length)throw Object.assign(new Error('Verified warehouse facts are required.'),{status:409});
  const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET status='REVIEWED',reviewed_at=?,updated_at=? WHERE submission_id=?").run(now,now,sub.id);audit(sub.id,'LISTING DRAFT REVIEWED (NOT PUBLISHED)');return inspect(sub);}
- return {inspect,generate,save,approve};
+ return {inspect,generate,save,approve,importEbay};
 }
