@@ -15,12 +15,11 @@
   html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I confirm these details come from the submitted information or physical inspection; unverified claims must be checked before final approval.</label><div class="editor-actions">';
   html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(draftGates.length?'disabled':'')+'>Create starter draft</button>';
   html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(draftGates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
-  html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Uses product details and expiring photo links visible only to anyone holding those temporary links. eBay may process and retain submitted images under its policies. No listing is created.</p><button class="btn btn-outline" type="button" id="mappingStart" '+(draftGates.length?'disabled':'')+'>Generate eBay recommendations</button> <button class="btn btn-outline" type="button" id="mappingCheck">Check results</button><div id="mappingResult" class="save-notice" role="status"></div></div>';
-  html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay Inventory Mapping will be a later integration.')+'</p></form>';
+
   if(d){
    const approved=d.status==='REVIEWED';
    html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft awaiting staff review')+'</strong><p>'+(approved?'The draft is approved inside SHUKCHIC only. No eBay listing has been created. Editing will return it to draft.':'Check the title and description now. Final approval unlocks after warehouse receipt, inspection, SKU, bin and price/category checks.')+'</p></div>';
-   html+='<form id="listingEdit"><h3>Review listing draft · '+esc(d.source==='ebay_ai'?'eBay AI (editable)':d.source==='ai'?'AI suggestion':'starter template')+'</h3><div class="editor-grid">';
+   html+='<form id="listingEdit"><h3>Listing details · '+esc(d.source==='ebay_ai'?'eBay AI draft':d.source==='ai'?'AI draft':'starter draft')+'</h3><div class="editor-grid">';
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
    html+=field('Category suggestion','categorySuggestion',d.category_hint);
@@ -31,6 +30,8 @@
    html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save edited draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
    html+='<p class="detail-meta">Category ID and price must be confirmed by staff. This is an internal review only: no listings are sent to eBay.</p></form>';
   }
+  html+='<div class="listing-mapping-info"><strong>eBay AI recommendations</strong><p>Uses product details and expiring photo links visible only to anyone holding those temporary links. eBay may process and retain submitted images under its policies. No listing is created.</p><button class="btn btn-outline" type="button" id="mappingStart" '+(draftGates.length?'disabled':'')+'>Generate eBay recommendations</button> <button class="btn btn-outline" type="button" id="mappingCheck">Check results</button><div id="mappingResult" class="save-notice" role="status"></div></div>';
+  html+='<p class="detail-meta">'+(state.aiAvailable?'AI drafting enabled. Staff details are sent to the configured provider; customer contact data and photos are not sent.':'AI drafting is not configured yet. OPENAI_API_KEY enables actual AI drafting. eBay AI recommendations are connected; use the results to edit your listing.')+'</p></form>';
   html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
   const feedback=div.querySelector('#listingFeedback');
@@ -44,7 +45,13 @@
    mappingNode.replaceChildren();
    if(!t){mappingNode.textContent='No eBay AI request yet.';return;}
    const message=document.createElement('p');message.textContent='eBay AI: '+t.status+(t.status==='PENDING'?' — check results again after processing':'');mappingNode.append(message);
-   if(t.preview){const p=t.preview;for(const [name,value] of [['Suggested title',p.title],['eBay category',p.categoryName+' ('+p.categoryId+')'],['Description',p.description],['Reference',p.mappingReferenceId]]){const e=document.createElement('p');e.textContent=name+': '+value;mappingNode.append(e);}if(document.querySelector('#listingGenerate')?.elements?.itemType?.value.trim().toLowerCase()==='ear cuff' && /necklace|pendant/i.test(p.categoryName||'')){const warning=document.createElement('p');warning.textContent='Category mismatch: verified EAR CUFF, but eBay suggested '+p.categoryName+'. Do not use this category without correction.';warning.className='admin-error';warning.style.display='block';mappingNode.append(warning);}const importBtn=document.createElement('button');importBtn.type='button';importBtn.className='btn btn-primary';importBtn.textContent='Use eBay AI in listing editor';importBtn.addEventListener('click',async()=>{try{importBtn.disabled=true;const resp=await fetch('/api/admin/submissions/'+encodeURIComponent(id)+'/ebay-ai/import',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemType:document.querySelector('#listingGenerate')?.elements?.itemType?.value||'',replace:!!d})});const data=await resp.json();if(!resp.ok)throw Error(data.error||'Could not import');render(id,data);document.querySelector('#listingFeedback').textContent='AI suggestions loaded into editable SHUKCHIC fields. Verify all details before saving.';}catch(e){mappingNode.textContent=e.message;importBtn.disabled=false;}});mappingNode.append(importBtn);const reminder=document.createElement('strong');reminder.textContent='Suggestions only. Import into the editor and verify before approving. No eBay listing published.';mappingNode.append(reminder);}
+   if(t.status==='COMPLETED'&&op==='poll'&&data.listing){render(id,data.listing);document.querySelector('#listingFeedback').textContent='eBay AI recommendations are now in the listing fields. Edit them here, then save.';return;}
+   if(t.preview){const p=t.preview;
+    if(document.querySelector('#listingGenerate')?.elements?.itemType?.value.trim().toLowerCase()==='ear cuff'&&/necklace|pendant/i.test(p.categoryName||'')){
+     const warning=document.createElement('p');warning.className='admin-error';warning.style.display='block';warning.textContent='eBay suggested '+p.categoryName+' but this is an Ear Cuff. Verify category before approval.';mappingNode.append(warning);
+    }
+    const note=document.createElement('p');note.textContent='Recommendations received. They appear in Listing details above. No listing published.';mappingNode.append(note);
+   }
   }
   div.querySelector('#mappingStart')?.addEventListener('click',async()=>{
    const form=div.querySelector('#listingGenerate');
@@ -53,8 +60,8 @@
     await mapping('start',{itemType:form.elements.itemType.value,color:form.elements.color.value,material:form.elements.material.value});
    }catch(e){mappingNode.textContent=e.message;}
   });
-  div.querySelector('#mappingCheck')?.addEventListener('click',async()=>{try{await mapping('poll');}catch(e){mappingNode.textContent=e.message;}});
-  mapping('').catch(e=>{mappingNode.textContent=e.message;});
+  div.querySelector('#mappingCheck')?.addEventListener('click',async()=>{try{await mapping('poll',{itemType:div.querySelector('#listingGenerate').elements.itemType.value});}catch(e){mappingNode.textContent=e.message;}});
+  mapping('').then(()=>{if(!d&&mappingNode.textContent.includes('COMPLETED'))mapping('poll',{itemType:div.querySelector('#listingGenerate').elements.itemType.value}).catch(e=>{mappingNode.textContent=e.message;});}).catch(e=>{mappingNode.textContent=e.message;});
 
   async function act(op,payload){
    feedback.textContent='Processing…';
