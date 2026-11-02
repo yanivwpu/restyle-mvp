@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 // Draft management only. No eBay credentials, listing writes or public publication in this module.
 const clean=(s,n=500)=>String(s??'').trim().slice(0,n);
 const unpack=(s,def)=>{try{return JSON.parse(s);}catch{return def;}};
-function factsFor(sub,b){return {brand:clean(sub.brand,100),category:clean(sub.category,70),condition:clean(sub.condition,80),size:clean(b.size,70),color:clean(b.color,70),material:clean(b.material,80),measurements:clean(b.measurements,300),flaws:clean(b.flaws,900),facts:clean(b.facts,900)};}
+function factsFor(sub,b){return {brand:clean(sub.brand,100),category:clean(b.itemType,70)||clean(sub.category,70),condition:clean(sub.condition,80),size:clean(b.size,70),color:clean(b.color,70),material:clean(b.material,80),measurements:clean(b.measurements,300),flaws:clean(b.flaws,900),facts:clean(b.facts,900)};}
 function starter(f){
  const title=[f.brand,f.category,f.size?'Size '+f.size:'',f.color].filter(Boolean).join(' ').slice(0,80);
  const lines=[f.brand+' '+f.category,'Warehouse verified condition: '+f.condition];
