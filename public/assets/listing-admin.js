@@ -45,7 +45,7 @@
    mappingNode.replaceChildren();
    if(!t){mappingNode.textContent='No eBay AI request yet.';return;}
    const message=document.createElement('p');message.textContent='eBay AI: '+t.status+(t.status==='PENDING'?' — check results again after processing':'');mappingNode.append(message);
-   if(t.status==='COMPLETED'&&op==='poll'&&data.listing){render(id,data.listing);document.querySelector('#listingFeedback').textContent='eBay AI recommendations are now in the listing fields. Edit them here, then save.';return;}
+   if(t.status==='COMPLETED'&&op==='poll'&&data.listing){if(!d){render(id,data.listing);document.querySelector('#listingFeedback').textContent='eBay AI recommendations populated the listing fields. Review and save your corrections.';}else{mappingNode.textContent='eBay AI results available. Existing listing edits are preserved; no fields were overwritten.';}return;}
    if(t.preview){const p=t.preview;
     if(document.querySelector('#listingGenerate')?.elements?.itemType?.value.trim().toLowerCase()==='ear cuff'&&/necklace|pendant/i.test(p.categoryName||'')){
      const warning=document.createElement('p');warning.className='admin-error';warning.style.display='block';warning.textContent='eBay suggested '+p.categoryName+' but this is an Ear Cuff. Verify category before approval.';mappingNode.append(warning);
