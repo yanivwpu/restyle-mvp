@@ -82,9 +82,10 @@
    const main=edit.querySelector('#ebayCategoryMain'),sub=edit.querySelector('#ebayCategorySub'),hint=edit.querySelector('#ebayCategoryHint');
    const itemType=div.querySelector('[name=itemType]')?.value?.trim()||d.category_hint||'jewelry';
    const savedCategoryId=String(d.category_id||'');
+   const savedPath=String(d.category_hint||'').includes(' › ')?String(d.category_hint).split(' › '):[];
    let paths=[];
    const wrap=sub.parentNode;
-   function clearSelection(){edit.elements.categoryId.value='';edit.elements.categorySuggestion.value='';}
+   function clearSelection(){edit.elements.categoryId.value='';}
    function renderLevel(level,prefix){
      // Only final eBay leaf categories can be saved. Non-leaf levels reveal the next dropdown.
      for(const element of [...wrap.querySelectorAll('[data-category-level]')])if(Number(element.dataset.categoryLevel)>=level)element.remove();
@@ -101,8 +102,10 @@
        const value=select.value;
        if(!value){for(const el of [...wrap.querySelectorAll('[data-category-level]')])if(Number(el.dataset.categoryLevel)>level)el.remove();return;}
        const chosen=[...prefix,value];
+       edit.elements.categorySuggestion.value=chosen.join(' › ');
+       hint.textContent='Selected: '+chosen.join(' › ')+(chosen.length<3?' · continue to a final category':'');
        const match=paths.find(p=>p.parts.length===chosen.length&&chosen.every((name,i)=>p.parts[i]===name));
-       if(match){edit.elements.categoryId.value=match.id;edit.elements.categorySuggestion.value=match.name;hint.textContent='Selected: '+chosen.join(' › ');}
+       if(match){edit.elements.categoryId.value=match.id;hint.textContent='Selected final category: '+chosen.join(' › ');}
        else{hint.textContent='Continue to the final eBay subcategory';renderLevel(level+1,chosen);}
      };
    }
@@ -115,23 +118,20 @@
        if(!paths.length){hint.textContent='No matching categories found.';return;}
        renderLevel(0,[]);
        const saved=paths.find(p=>p.id===savedCategoryId);
-       if(saved){
-         for(let level=0;level<saved.parts.length;level++){
+       const restoreParts=saved?.parts||savedPath;
+       if(restoreParts.length){
+         for(let level=0;level<restoreParts.length;level++){
            const select=level===0?main:level===1?sub:wrap.querySelector('[data-category-level="'+level+'"]');
-           if(!select)break;
-           select.value=saved.parts[level];
+           if(!select||![...select.options].some(o=>o.value===restoreParts[level]))break;
+           select.value=restoreParts[level];
            select.dispatchEvent(new Event('change'));
          }
-         edit.elements.categoryId.value=saved.id;
-         edit.elements.categorySuggestion.value=saved.name;
-         hint.textContent='Selected: '+saved.parts.join(' › ');
+         if(saved){edit.elements.categoryId.value=saved.id;edit.elements.categorySuggestion.value=saved.parts.join(' › ');}
+         hint.textContent=saved?'Selected: '+saved.parts.join(' › '):'Saved selection: '+restoreParts.join(' › ')+' — continue to final category';
        }else if(savedCategoryId){
-         // The limited eBay suggestions may not contain a previously saved category.
-         // Keep its ID and label instead of silently clearing or replacing it.
          edit.elements.categoryId.value=savedCategoryId;
-         edit.elements.categorySuggestion.value=d.category_hint||'';
-         hint.textContent='Saved category: '+(d.category_hint||'eBay category')+' (#'+savedCategoryId+'). Choose a category to change it.';
-       }else hint.textContent='Choose each level until you reach the final subcategory.';
+         hint.textContent='Saved eBay category #'+savedCategoryId+' (not in current suggestions).';
+       }else hint.textContent='Choose each level until the final subcategory.';
      }catch(err){hint.textContent='eBay category lookup unavailable: '+err.message;}
    }
    if(d.category_id)hint.textContent='Saved eBay category #'+d.category_id+'. Change the dropdowns only if needed.';
