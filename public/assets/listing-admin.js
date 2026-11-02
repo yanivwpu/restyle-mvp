@@ -11,7 +11,7 @@
   let html='<h3>AI eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Prepare a factual title, description, category suggestion and item specifics. Samantha reviews every draft before future eBay publishing is enabled.</p>';
   if(draftGates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(draftGates.join(' · '))+'</p>';
   else html+='<p class="save-notice">Agreement and submission checks passed. You can prepare a preliminary draft; final approval still requires warehouse inspection.</p>';
-  html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
+  html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified item type','itemType',facts.category||'')+field('Verified size','size',facts.size||'')+field('Verified color','color',facts.color||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div>';
   html+='<label class="verified-row"><input type="checkbox" name="confirmPhysicalFacts" required> I confirm these details come from the submitted information or physical inspection; unverified claims must be checked before final approval.</label><div class="editor-actions">';
   html+='<button class="btn btn-outline" name="mode" value="starter" type="submit" '+(draftGates.length?'disabled':'')+'>Create starter draft</button>';
   html+='<button class="btn btn-primary" name="mode" value="ai" type="submit" '+(draftGates.length||!state.aiAvailable?'disabled':'')+'>✨ Generate AI draft</button></div>';
@@ -44,13 +44,13 @@
    mappingNode.replaceChildren();
    if(!t){mappingNode.textContent='No eBay AI request yet.';return;}
    const message=document.createElement('p');message.textContent='eBay AI: '+t.status+(t.status==='PENDING'?' — check results again after processing':'');mappingNode.append(message);
-   if(t.preview){const p=t.preview;for(const [name,value] of [['Suggested title',p.title],['eBay category',p.categoryName+' ('+p.categoryId+')'],['Description',p.description],['Reference',p.mappingReferenceId]]){const e=document.createElement('p');e.textContent=name+': '+value;mappingNode.append(e);}const reminder=document.createElement('strong');reminder.textContent='Suggestions only. Review and copy into the draft before approving. No eBay listing published.';mappingNode.append(reminder);}
+   if(t.preview){const p=t.preview;for(const [name,value] of [['Suggested title',p.title],['eBay category',p.categoryName+' ('+p.categoryId+')'],['Description',p.description],['Reference',p.mappingReferenceId]]){const e=document.createElement('p');e.textContent=name+': '+value;mappingNode.append(e);}if(document.querySelector('#listingGenerate')?.elements?.itemType?.value.trim().toLowerCase()==='ear cuff' && /necklace|pendant/i.test(p.categoryName||'')){const warning=document.createElement('p');warning.textContent='Category mismatch: verified EAR CUFF, but eBay suggested '+p.categoryName+'. Do not use this category without correction.';warning.className='admin-error';warning.style.display='block';mappingNode.append(warning);}const reminder=document.createElement('strong');reminder.textContent='Suggestions only. Review and copy into the draft before approving. No eBay listing published.';mappingNode.append(reminder);}
   }
   div.querySelector('#mappingStart')?.addEventListener('click',async()=>{
    const form=div.querySelector('#listingGenerate');
    try{
     if(!form.elements.confirmPhysicalFacts.checked)throw Error('Confirm verified item facts first.');
-    await mapping('start',{color:form.elements.color.value,material:form.elements.material.value});
+    await mapping('start',{itemType:form.elements.itemType.value,color:form.elements.color.value,material:form.elements.material.value});
    }catch(e){mappingNode.textContent=e.message;}
   });
   div.querySelector('#mappingCheck')?.addEventListener('click',async()=>{try{await mapping('poll');}catch(e){mappingNode.textContent=e.message;}});
@@ -65,7 +65,7 @@
   div.querySelector('#listingGenerate').addEventListener('submit',async event=>{
    event.preventDefault();
    const form=event.currentTarget,submitter=event.submitter,mode=submitter?.value==='ai'?'ai':'starter',b={mode};
-   for(const name of ['size','color','material','measurements','flaws','facts'])b[name]=form.elements[name].value;
+   for(const name of ['itemType','size','color','material','measurements','flaws','facts'])b[name]=form.elements[name].value;
    b.confirmPhysicalFacts=form.elements.confirmPhysicalFacts.checked;
    for(const button of form.querySelectorAll('button'))button.disabled=true;
    try{await act('generate',b);}catch(err){feedback.textContent=err.message;for(const button of form.querySelectorAll('button'))button.disabled=false;}
