@@ -20,7 +20,8 @@
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
    html+=field('Category suggestion','categorySuggestion',d.category_hint);
-   html+=field('eBay category ID (staff confirmed)','categoryId',d.category_id);
+   html+='<label class="span-all">Find eBay category<input name="categorySearch" id="ebayCategorySearch" placeholder="Search ear cuffs, earrings, handbags…" value="'+esc(d.category_hint||'')+'"><small>Search eBay’s official categories, then choose the correct one. No category numbers to remember.</small><select id="ebayCategoryChoices"><option value="">Search to see matching eBay categories</option></select></label>';
+   html+='<label>Selected eBay category<input name="categoryDisplay" id="ebayCategoryDisplay" value="'+esc(d.category_id?d.category_hint+' (#'+d.category_id+')':'Not selected yet')+'" readonly><input type="hidden" name="categoryId" value="'+esc(d.category_id)+'"></label>';
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
    if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';if(!d.price_cents||!d.category_id)html+='<p class="detail-meta">Before approval: enter an asking price and confirm the correct eBay category ID. You can save now without them.</p>';
@@ -80,6 +81,26 @@
   }
   const edit=div.querySelector('#listingEdit');
   if(edit){
+   const q=edit.querySelector('#ebayCategorySearch'),choices=edit.querySelector('#ebayCategoryChoices');
+   let debounce=null,sequence=0;
+   async function searchCategories(){
+    const query=q.value.trim(),turn=++sequence;
+    if(query.length<2){choices.replaceChildren(new Option('Enter at least 2 characters',''));return;}
+    choices.replaceChildren(new Option('Searching eBay categories…',''));
+    try{
+     const response=await fetch('/api/admin/ebay/category-suggestions?q='+encodeURIComponent(query),{credentials:'same-origin'});
+     const payload=await response.json();
+     if(turn!==sequence)return;
+     if(!response.ok)throw Error(payload.error||'Category search unavailable');
+     choices.replaceChildren(new Option('Choose a category',''));
+     for(const c of payload.categories||[]){const opt=new Option((c.path?c.path+' › ':'')+c.name,c.id);opt.dataset.name=c.name;choices.add(opt);}
+     if(choices.options.length===1)choices.options[0].textContent='No matching categories. Try a broader term.';
+    }catch(err){if(turn===sequence)choices.replaceChildren(new Option(err.message,' '));}
+   }
+   q.addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(searchCategories,350);});
+   choices.addEventListener('change',()=>{const option=choices.selectedOptions[0];if(!option?.value.trim())return;edit.elements.categoryId.value=option.value;edit.querySelector('#ebayCategoryDisplay').value=option.dataset.name+' (#'+option.value+')';edit.elements.categorySuggestion.value=option.dataset.name;});
+   if(!d.category_id&&q.value.trim().length>1)searchCategories();
+
    edit.addEventListener('submit',async event=>{
     event.preventDefault();const b={};for(const name of ['title','price','description','categorySuggestion','categoryId'])b[name]=edit.elements[name].value;
     try{await act('save',b);}catch(err){feedback.textContent=err.message;}
