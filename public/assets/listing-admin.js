@@ -96,6 +96,7 @@
      for(const name of values)select.add(new Option(name,name));
      select.onchange=()=>{
        clearSelection();
+       for(const el of [...wrap.querySelectorAll('[data-category-level]')])if(Number(el.dataset.categoryLevel)>level)el.remove();
        const value=select.value;
        if(!value){for(const el of [...wrap.querySelectorAll('[data-category-level]')])if(Number(el.dataset.categoryLevel)>level)el.remove();return;}
        const chosen=[...prefix,value];
