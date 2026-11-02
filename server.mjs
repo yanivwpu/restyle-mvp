@@ -377,7 +377,7 @@ async function handle(req,res){
    if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
    if(!throttle(req,'ebay_ai_'+action,8,15*60_000))return problem(res,429,'Too many AI preview requests.');
    if(action==='start'){const details=await readJson(req,5000);return json(res,200,{task:await ebayMapping.start(item,signing.state(item.id),details)});}
-   if(action==='poll')return json(res,200,{task:await ebayMapping.poll(item)});
+   if(action==='poll'){const task=await ebayMapping.poll(item);if(task?.status==='COMPLETED'&&task.preview){const draft=listingDrafts.importEbay(item,task.preview,{itemType:clean((await readJson(req,2000)).itemType,70)});return json(res,200,{task,draft: draft.draft,listing:draft});}return json(res,200,{task});}
    if(action==='import'){
     const body=await readJson(req,2000),task=ebayMapping.inspect(item);
     if(task?.status!=='COMPLETED'||!task.preview)return problem(res,409,'A completed eBay AI preview is required.');
