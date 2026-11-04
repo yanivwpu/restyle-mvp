@@ -317,3 +317,23 @@ test('Approved listings are private and return a non-publishing photo preview',a
  const notFound=await request('/api/admin/approved-listings/RS-0000000000/preview');
  assert.equal(notFound.r.status,404);
 });
+
+
+test('Listing queue includes saved drafts that were edited after internal review',async()=>{
+ const id=submissionId;
+ const db=new DatabaseSync(path.join(dir,'restyle.sqlite'));
+ const original=db.prepare('SELECT status FROM ebay_listing_drafts WHERE submission_id=?').get(id);
+ assert(original,'Previous test must have prepared listing draft');
+ db.prepare("UPDATE ebay_listing_drafts SET status='DRAFT', reviewed_at=NULL WHERE submission_id=?").run(id);
+ db.close();
+ const queue=await request('/api/admin/approved-listings');
+ assert.equal(queue.r.status,200);
+ const draft=queue.data.items.find(x=>x.id===id);
+ assert(draft,'Edited listing must remain visible in queue');
+ assert.equal(draft.review_status,'DRAFT');
+ const preview=await request('/api/admin/approved-listings/'+id+'/preview');
+ assert.equal(preview.r.status,200);
+ assert.equal(preview.data.reviewStatus,'DRAFT');
+ assert.equal(preview.data.readyForPublishingPreparation,false);
+ assert(preview.data.checks.some(x=>x.includes('Staff review required')));
+});
