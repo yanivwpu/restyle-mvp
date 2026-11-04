@@ -4,6 +4,11 @@ import crypto from 'node:crypto';
 // listing or payout API methods are called here.
 // eBay uses the generated RuName in BOTH the authorize and code grant requests.
 const MAPPING_SCOPE='https://api.ebay.com/oauth/api_scope/sell.inventory.mapping';
+const PUBLISH_SCOPES=[
+ 'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
+ 'https://api.ebay.com/oauth/api_scope/sell.inventory',
+ 'https://api.ebay.com/oauth/api_scope/sell.account.readonly'
+];
 const SCOPES=[
  'https://api.ebay.com/oauth/api_scope/commerce.identity.readonly',
  'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
@@ -39,6 +44,8 @@ export function createEbayOAuth({
  db.exec("CREATE TABLE IF NOT EXISTS ebay_oauth_states (state_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)");
  db.exec("CREATE TABLE IF NOT EXISTS ebay_ai_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1), seller_user_id TEXT NOT NULL,seller_username TEXT NOT NULL,token_cipher TEXT NOT NULL,access_expires_at INTEGER NOT NULL,refresh_expires_at INTEGER NOT NULL,connected_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS ebay_ai_oauth_states (state_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)");
+ db.exec("CREATE TABLE IF NOT EXISTS ebay_publish_oauth_states (state_hash TEXT PRIMARY KEY,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER)");
+ db.exec("CREATE TABLE IF NOT EXISTS ebay_publish_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1),seller_user_id TEXT NOT NULL,seller_username TEXT NOT NULL,token_cipher TEXT NOT NULL,access_expires_at INTEGER NOT NULL,refresh_expires_at INTEGER NOT NULL,connected_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS ebay_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1), seller_user_id TEXT NOT NULL, seller_username TEXT NOT NULL, token_cipher TEXT NOT NULL, access_expires_at INTEGER NOT NULL, refresh_expires_at INTEGER NOT NULL, connected_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
  let key=null;
  try{const buf=Buffer.from(encryptionKey||'','base64url');if(buf.length===32&&typeof encryptionKey==='string'&&/^[A-Za-z0-9_-]{43}$/.test(encryptionKey))key=buf;}catch{}
@@ -125,6 +132,59 @@ export function createEbayOAuth({
      const result=db.prepare('UPDATE ebay_ai_oauth_connection SET token_cipher=?,access_expires_at=?,updated_at=? WHERE id=1 AND token_cipher=?').run(updated,clock()+Number(r.expires_in)*1000,new Date(clock()).toISOString(),row.token_cipher);
      if(result.changes!==1)throw fail(409,'AI token updated concurrently; retry.');
      row=db.prepare('SELECT * FROM ebay_ai_oauth_connection WHERE id=1').get();
+   }
+   return decrypt(row.token_cipher).accessToken;
+ }
+ function publishStatus(){
+   const row=db.prepare('SELECT seller_username,access_expires_at,refresh_expires_at FROM ebay_publish_oauth_connection WHERE id=1').get();
+   const main=readRow();
+   return {connected:!!row&&!!main,sellerUsername:row?.seller_username||null,standardConnected:!!main,
+    canReadPolicies:!!row,publishingEnabled:false,
+    accessExpiresAt:row?new Date(row.access_expires_at).toISOString():null};
+ }
+ function startPublishing(){
+   requireConfig();
+   if(!readRow())throw fail(409,'Connect your regular eBay seller account first.');
+   const nonce=crypto.randomBytes(32).toString('base64url'),now=clock();
+   db.prepare('DELETE FROM ebay_publish_oauth_states WHERE expires_at<?').run(now);
+   db.prepare('INSERT INTO ebay_publish_oauth_states(state_hash,created_at,expires_at) VALUES (?,?,?)').run(hash(nonce),now,now+600000);
+   const u=new URL('https://auth.ebay.com/oauth2/authorize');
+   u.searchParams.set('client_id',clientId);u.searchParams.set('response_type','code');u.searchParams.set('redirect_uri',ruName);
+   u.searchParams.set('scope',PUBLISH_SCOPES.join(' '));u.searchParams.set('state',nonce);
+   return {authorizationUrl:u.toString(),expiresInSeconds:600,publishingEnabled:false};
+ }
+ async function completePublishing({state,code,error}){
+   if(typeof state!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(state))throw fail(400,'Invalid publishing authorization state.');
+   const result=db.prepare('UPDATE ebay_publish_oauth_states SET consumed_at=? WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?').run(clock(),hash(state),clock());
+   if(result.changes!==1)throw fail(400,'Publishing authorization expired or already used.');
+   if(error)throw fail(400,'Publishing access declined. No existing connection was changed.');
+   if(!tokenValid(code))throw fail(400,'Missing eBay publishing authorization code.');
+   const tokens=await requestTokens({grant_type:'authorization_code',code,redirect_uri:ruName});
+   if(!tokenValid(tokens.access_token)||!tokenValid(tokens.refresh_token))throw fail(502,'Incomplete eBay publishing consent.');
+   const seller=await identity(tokens.access_token),main=readRow();
+   if(!main||seller.userId!==main.seller_user_id)throw fail(409,'Publishing authorization belongs to a different seller. Existing connection unchanged.');
+   const accessLife=refreshTime(tokens.expires_in),refreshLife=refreshTime(tokens.refresh_token_expires_in);
+   if(!accessLife||!refreshLife)throw fail(502,'Invalid authorization expiry.');
+   const now=clock(),stamp=new Date(now).toISOString();
+   db.prepare("INSERT INTO ebay_publish_oauth_connection (id,seller_user_id,seller_username,token_cipher,access_expires_at,refresh_expires_at,connected_at,updated_at) VALUES (1,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET seller_user_id=excluded.seller_user_id,seller_username=excluded.seller_username,token_cipher=excluded.token_cipher,access_expires_at=excluded.access_expires_at,refresh_expires_at=excluded.refresh_expires_at,updated_at=excluded.updated_at")
+    .run(seller.userId,seller.username,encrypt({accessToken:tokens.access_token,refreshToken:tokens.refresh_token}),now+accessLife*1000,now+refreshLife*1000,stamp,stamp);
+   return {connected:true,publishingAuthorization:true,sellerUsername:seller.username,publishingEnabled:false};
+ }
+ async function getPublishingToken(){
+   requireConfig();
+   let row=db.prepare('SELECT * FROM ebay_publish_oauth_connection WHERE id=1').get();
+   if(!row)throw fail(409,'Connect eBay publishing permission first.');
+   if(!readRow()||row.seller_user_id!==readRow().seller_user_id)throw fail(409,'Publishing seller does not match connected account.');
+   if(row.access_expires_at<=clock()+60000){
+    if(row.refresh_expires_at<=clock()+120000)throw fail(409,'Publishing permission expired. Reconnect.');
+    const current=decrypt(row.token_cipher);
+    const tokens=await requestTokens({grant_type:'refresh_token',refresh_token:current.refreshToken,scope:PUBLISH_SCOPES.join(' ')});
+    if(!tokenValid(tokens.access_token)||!refreshTime(tokens.expires_in))throw fail(502,'Could not refresh publishing authorization.');
+    const next=encrypt({accessToken:tokens.access_token,refreshToken:tokenValid(tokens.refresh_token)?tokens.refresh_token:current.refreshToken});
+    const updated=db.prepare('UPDATE ebay_publish_oauth_connection SET token_cipher=?,access_expires_at=?,updated_at=? WHERE id=1 AND token_cipher=?')
+     .run(next,clock()+Number(tokens.expires_in)*1000,new Date(clock()).toISOString(),row.token_cipher);
+    if(updated.changes!==1)throw fail(409,'Publishing credentials changed; retry.');
+    row=db.prepare('SELECT * FROM ebay_publish_oauth_connection WHERE id=1').get();
    }
    return decrypt(row.token_cipher).accessToken;
  }
@@ -216,5 +276,5 @@ export function createEbayOAuth({
    db.prepare('DELETE FROM ebay_oauth_states').run();
    return {disconnected:true};
  }
- return {status,start,complete,refresh,getAccessToken,getAppAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken};
+ return {status,start,complete,refresh,getAccessToken,getAppAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken,publishStatus,startPublishing,completePublishing,getPublishingToken};
 }
