@@ -228,6 +228,26 @@ test('Approval signing flow stores protected PDF and queues shipping only after 
  assert.equal(saved.r.status,200,JSON.stringify(saved.data));assert.equal(saved.data.draft.price_cents,29000);
  const reviewed=await request(`/api/admin/submissions/${id}/listing/approve`,{method:'POST',body:'{}'});
  assert.equal(reviewed.r.status,200,JSON.stringify(reviewed.data));assert.equal(reviewed.data.draft.status,'REVIEWED');assert.equal(reviewed.data.publishingEnabled,false);
+
+ const updatedReview=await request(`/api/admin/submissions/${id}/listing/approve`,{method:'POST',body:JSON.stringify({title:'Prada Black Leather Handbag Medium',description:stillThere.data.draft.description,categorySuggestion:'Handbags',categoryId:'169291',price:'290',verifiedFacts:{itemType:'Handbag',color:'Ivory with gold accent',size:'Medium',material:'',measurements:'',flaws:'Minor corner scuff',facts:''}})});
+ assert.equal(updatedReview.r.status,200,JSON.stringify(updatedReview.data));
+ assert.equal(updatedReview.data.draft.status,'REVIEWED');
+ assert.equal(updatedReview.data.draft.verifiedFacts.color,'Ivory with gold accent');
+ assert.equal(updatedReview.data.draft.aspects.Color,'Ivory with gold accent');
+ const reopened=await request(`/api/admin/submissions/${id}/listing`);
+ assert.equal(reopened.data.draft.verifiedFacts.color,'Ivory with gold accent');
+ const failedReview=await request(`/api/admin/submissions/${id}/listing/approve`,{method:'POST',body:JSON.stringify({title:'Prada Black Leather Handbag Medium',description:stillThere.data.draft.description,categorySuggestion:'Handbags',categoryId:'',price:'290',verifiedFacts:{itemType:'Handbag',color:'Rose Gold'}})});
+ assert.equal(failedReview.r.status,409);
+ const afterFailure=await request(`/api/admin/submissions/${id}/listing`);
+ assert.equal(afterFailure.data.draft.status,'REVIEWED','Failed review must not downgrade a previously approved listing');
+ assert.equal(afterFailure.data.draft.verifiedFacts.color,'Ivory with gold accent','Failed review must not save partial details');
+ const savedColor=await request(`/api/admin/submissions/${id}/listing/save`,{method:'POST',body:JSON.stringify({title:'Prada Black Leather Handbag Medium',description:stillThere.data.draft.description,categorySuggestion:'Handbags',categoryId:'169291',price:'290',verifiedFacts:{itemType:'Handbag',color:'Gold-tone accents'}})});
+ assert.equal(savedColor.r.status,200);
+ assert.equal(savedColor.data.draft.status,'DRAFT');
+ assert.equal(savedColor.data.draft.verifiedFacts.color,'Gold-tone accents');
+ const colorReload=await request(`/api/admin/submissions/${id}/listing`);
+ assert.equal(colorReload.data.draft.verifiedFacts.color,'Gold-tone accents');
+
  const noPublish=await request(`/api/admin/submissions/${id}/listing/publish`,{method:'POST',body:'{}'});
  assert.equal(noPublish.r.status,404,'No eBay publishing endpoint exists');
  const unauthed=await fetch(base+`/api/admin/submissions/${id}/listing`);assert.equal(unauthed.status,401);
