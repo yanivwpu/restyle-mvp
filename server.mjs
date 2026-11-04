@@ -406,6 +406,30 @@ async function handle(req,res){
   }
   return problem(res,405,'Method not allowed.');
  }
+ const deleteWarehousePhoto=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/warehouse-photos\/([0-9a-f-]{36})$/);
+ if(req.method==='DELETE'&&deleteWarehousePhoto){
+  if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+  if(!throttle(req,'delete_warehouse_photo',12,15*60_000))return problem(res,429,'Too many photo changes.');
+  const [_,submissionId,photoId]=deleteWarehousePhoto;
+  const photo=db.prepare('SELECT filename FROM warehouse_photos WHERE id=? AND submission_id=?').get(photoId,submissionId);
+  if(!photo)return problem(res,404,'Warehouse photo not found. Customer photos cannot be deleted here.');
+  const filename=path.basename(photo.filename),filepath=path.join(UPLOAD_DIR,filename);
+  const temporary=filepath+'.delete-'+crypto.randomUUID();
+  // Move the file aside before committing the database deletion, so a failed DB update can restore it.
+  fs.renameSync(filepath,temporary);
+  try{
+   db.exec('BEGIN');
+   db.prepare('DELETE FROM listing_photo_selection WHERE submission_id=? AND photo_id=?').run(submissionId,photoId);
+   db.prepare('DELETE FROM warehouse_photos WHERE id=? AND submission_id=?').run(photoId,submissionId);
+   db.prepare('UPDATE listing_photo_selection SET position=position+100 WHERE submission_id=?').run(submissionId);
+   const rows=db.prepare('SELECT photo_id FROM listing_photo_selection WHERE submission_id=? ORDER BY position').all(submissionId);
+   rows.forEach((r,i)=>db.prepare('UPDATE listing_photo_selection SET position=? WHERE submission_id=? AND photo_id=?').run(i,submissionId,r.photo_id));
+   db.exec('COMMIT');
+  }catch(err){try{db.exec('ROLLBACK');}catch{}fs.renameSync(temporary,filepath);throw err;}
+  try{fs.unlinkSync(temporary);}catch(err){console.error('Warehouse photo file cleanup requires attention:',err.message);}
+  audit(submissionId,'WAREHOUSE PHOTO DELETED '+photoId);
+  return json(res,200,availablePhotos(submissionId));
+ }
  const warehouseImage=p.match(/^\/api\/admin\/warehouse-photos\/([0-9a-f-]{36})$/);
  if(req.method==='GET'&&warehouseImage){const photo=db.prepare('SELECT filename,mime FROM warehouse_photos WHERE id=?').get(warehouseImage[1]);if(!photo)return problem(res,404,'Photo unavailable.');res.setHeader('Cache-Control','private, no-store');return serve(res,path.join(UPLOAD_DIR,path.basename(photo.filename)),photo.mime,true);}
  const taxonomyPath='/api/admin/ebay/category-suggestions';
