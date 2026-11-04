@@ -147,13 +147,15 @@ async function handle(req,res){
    let good=false;
    try{
      const returnedState=url.searchParams.get('state');
-     const aiAttempt=typeof returnedState==='string' && db.prepare('SELECT 1 FROM ebay_ai_oauth_states WHERE state_hash=?').get(crypto.createHash('sha256').update(returnedState).digest('hex'));
-     const result=await (aiAttempt?ebayOAuth.completeAI:ebayOAuth.complete)({
+     const stateHash=typeof returnedState==='string'?crypto.createHash('sha256').update(returnedState).digest('hex'):'';
+     const aiAttempt=stateHash&&db.prepare('SELECT 1 FROM ebay_ai_oauth_states WHERE state_hash=?').get(stateHash);
+     const publishingAttempt=stateHash&&db.prepare('SELECT 1 FROM ebay_publish_oauth_states WHERE state_hash=?').get(stateHash);
+     const result=await (publishingAttempt?ebayOAuth.completePublishing:aiAttempt?ebayOAuth.completeAI:ebayOAuth.complete)({
        state:url.searchParams.get('state'),
        code:url.searchParams.get('code'),
        error:url.searchParams.get('error')
      });
-     good=true;message=result.ai?'eBay AI permission connected for '+result.sellerUsername+'. Standard sales connection was preserved. Return to Admin.':'The authorized seller '+result.sellerUsername+' is now linked to SHUKCHIC. Return to Admin to review the connection.';
+     good=true;message=result.publishingAuthorization?'Publishing preparation permission connected for '+result.sellerUsername+'. No listing was published.':result.ai?'eBay AI permission connected for '+result.sellerUsername+'. Standard sales connection was preserved. Return to Admin.':'The authorized seller '+result.sellerUsername+' is now linked to SHUKCHIC. Return to Admin to review the connection.';
    }catch(err){message=err.status===503?'SHUKCHIC eBay authorization is not configured yet. No account was connected.':err.message;}
    res.writeHead(good?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
    return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC — eBay authorization</title><body style="font:16px Arial,sans-serif;max-width:650px;margin:12vh auto;padding:24px;color:#242225"><h1>'+ (good?'eBay seller connected':'eBay connection not completed') +'</h1><p>'+htmlEscape(message)+'</p><p>No listings were published and no sales were imported.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
@@ -295,6 +297,32 @@ async function handle(req,res){
    }),note:'Read-only paged preview. Item photos appear only when supplied by eBay. No imports or payouts.'});
   }catch(err){return problem(res,err.status||502,'eBay order preview unavailable: '+(err.status?err.message:'Connection or response failure.'));}
  }
+ if(req.method==='GET'&&p==='/api/admin/ebay/publishing/status'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  return json(res,200,{...ebayOAuth.publishStatus(),publishingEnabled:false});
+ }
+ if(req.method==='GET'&&p==='/api/admin/ebay/publishing/setup'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  if(!throttle(req,'ebay_publish_setup',12,15*60_000))return problem(res,429,'Too many publishing checks.');
+  if(!ebayOAuth.publishStatus().connected)return json(res,200,{connected:false,publishingEnabled:false,message:'Connect publishing preparation permission first.',policies:{},locations:[]});
+  const token=await ebayOAuth.getPublishingToken();
+  const headers={Authorization:'Bearer '+token,Accept:'application/json'};
+  const read=async(path,key)=>{
+   try{
+    const response=await fetch('https://api.ebay.com'+path,{headers,signal:AbortSignal.timeout(9000)});
+    if(!response.ok)return {available:false,status:response.status,items:[]};
+    const data=await response.json(),raw=Array.isArray(data[key])?data[key]:[];
+    return {available:true,status:200,items:raw.map(x=>({id:String(x.fulfillmentPolicyId||x.paymentPolicyId||x.returnPolicyId||x.merchantLocationKey||''),name:String(x.name||x.merchantLocationKey||'').slice(0,120)})).filter(x=>x.id)};
+   }catch{return {available:false,status:null,items:[]};}
+  };
+  const [fulfillment,payment,returns,locations]=await Promise.all([
+   read('/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US','fulfillmentPolicies'),
+   read('/sell/account/v1/payment_policy?marketplace_id=EBAY_US','paymentPolicies'),
+   read('/sell/account/v1/return_policy?marketplace_id=EBAY_US','returnPolicies'),
+   read('/sell/inventory/v1/location?limit=100','locations')
+  ]);
+  return json(res,200,{connected:true,publishingEnabled:false,policies:{fulfillment,payment,returns},locations,marketplace:'EBAY_US',message:'Read-only seller setup. No inventory or offers created.'});
+ }
  if(req.method==='GET'&&p==='/api/admin/ebay/status'){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const oauth=ebayOAuth.status();
@@ -310,6 +338,7 @@ async function handle(req,res){
    if(p==='/api/admin/ebay/oauth/probe')return json(res,200,await ebayOAuth.probe());
    if(p==='/api/admin/ebay/oauth/start')return json(res,200,ebayOAuth.start());
    if(p==='/api/admin/ebay/oauth/ai-start')return json(res,200,ebayOAuth.startAI());
+   if(p==='/api/admin/ebay/oauth/publishing-start')return json(res,200,ebayOAuth.startPublishing());
    if(p==='/api/admin/ebay/oauth/refresh')return json(res,200,await ebayOAuth.refresh());
    if(p==='/api/admin/ebay/oauth/disconnect')return json(res,200,ebayOAuth.disconnect());
    return problem(res,404,'Unknown OAuth action.');

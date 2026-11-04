@@ -365,3 +365,19 @@ test('Listing queue includes saved drafts that were edited after internal review
  assert.equal(preview.data.readyForPublishingPreparation,false);
  assert(preview.data.checks.some(x=>x.includes('Staff review required')));
 });
+
+
+test('eBay publishing setup remains private, unconnected and read-only before separate OAuth consent',async()=>{
+ const denied=await fetch(base+'/api/admin/ebay/publishing/status');
+ assert.equal(denied.status,401);
+ const status=await request('/api/admin/ebay/publishing/status');
+ assert.equal(status.r.status,200);
+ assert.equal(status.data.connected,false);
+ assert.equal(status.data.publishingEnabled,false);
+ const setup=await request('/api/admin/ebay/publishing/setup');
+ assert.equal(setup.r.status,200);
+ assert.equal(setup.data.connected,false);
+ assert.deepEqual(setup.data.locations,[]);
+ const attempt=await request('/api/admin/ebay/oauth/publishing-start',{method:'POST',body:'{}'});
+ assert.equal(attempt.r.status,503,'No publishing authorization without valid OAuth configuration');
+});
