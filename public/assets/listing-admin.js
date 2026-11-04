@@ -8,25 +8,31 @@
   document.querySelector('#restyleListing')?.remove();
   const div=document.createElement('section');div.id='restyleListing';div.className='detail-editor';
   const d=state.draft,gates=state.gates||[],draftGates=state.draftGates||gates,facts=d?.verifiedFacts||{};
-  let html='<h3>AI eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Prepare a factual title, description, category suggestion and item specifics. Samantha reviews every draft before future eBay publishing is enabled.</p>';
+  let html='<h3>eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Review item photos, listing details and category in one place. Nothing is sent to eBay.</p>';
   if(draftGates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(draftGates.join(' · '))+'</p>';
-  else html+='<p class="save-notice">Agreement and submission checks passed. You can prepare a preliminary draft; final approval still requires warehouse inspection.</p>';
+  else if(d?.status!=='REVIEWED')html+='<p class="save-notice">Agreement and submission checks passed. Drafting is available; staff approval requires inspection.</p>';
   html+='<section id="listingPhotoManager" class="listing-photo-manager"><h4>Listing photos</h4><p class="detail-meta">Customer photos remain unchanged. Add warehouse photos and choose which images to use in the listing.</p><div id="listingPhotoGallery" class="listing-photo-gallery">Loading photos…</div><label>Upload warehouse photos (up to 5 at once)<input type="file" id="warehousePhotoInput" accept="image/jpeg,image/png,image/webp" multiple></label><div class="editor-actions"><button class="btn btn-outline" type="button" id="warehouseUploadButton">Upload photos</button><button class="btn btn-outline" type="button" id="listingPhotoSave">Save listing photo selection</button></div><p id="listingPhotoMessage" role="status" class="save-notice"></p></section>';
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified item type','itemType',facts.category||'')+field('Verified color','color',facts.color||'')+'</div><details class="listing-extra-facts"><summary>Additional item details (optional)</summary><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div></details>';
   html+='</form>';
   if(d){
    const approved=d.status==='REVIEWED';
-   html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft awaiting staff review')+'</strong><p>'+(approved?'The draft is approved inside SHUKCHIC only. No eBay listing has been created. Editing will return it to draft.':'Check the title and description now. Final approval unlocks after warehouse receipt, inspection, SKU, bin and price/category checks.')+'</p></div>';
+   html+='<div class="listing-review-status '+(approved?'is-reviewed':'')+'"><strong>'+(approved?'✓ Staff reviewed — not published':'Draft ready for review')+'</strong><p>'+(approved?'Approved internally. No eBay listing exists. Editing returns this item to draft.':'Review the listing details and photos. Approval unlocks after warehouse, price and category checks.')+'</p></div>';
    html+='<form id="listingEdit"><h3>Listing details · '+esc(d.source==='ebay_ai'?'eBay AI draft':d.source==='ai'?'AI draft':'starter draft')+'</h3><div class="editor-grid">';
    html+=field('Listing title (80 characters)','title',d.title);
    html+=field('Asking price (USD)','price',d.price_cents?(d.price_cents/100).toFixed(2):'','number');
    html+='<label class="span-all">eBay category<div class="editor-grid" id="ebayCategoryLevels"><select id="ebayCategoryMain"><option value="">Choose category</option></select><select id="ebayCategorySub"><option value="">Choose subcategory</option></select></div><small id="ebayCategoryHint">Finding matching eBay categories…</small><input type="hidden" name="categorySuggestion" value="'+esc(d.category_hint||'')+'"><input type="hidden" name="categoryId" value="'+esc(d.category_id||'')+'"></label>';
    html+=textarea('Listing description','description',d.description,8);
-   html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
+   html+='</div>';
+   const inputText=String(d.description||'');
+   // In particular, "white with gold accent" is a color description, NOT evidence of white-gold metal.
+   if(/\bwhite\s+gold\b/i.test(inputText) && !/\bwhite\s+gold\b/i.test(String(facts.material||''))){
+    html+='<p class="listing-claim-warning" role="note"><strong>Check material claim:</strong> The description says “white gold,” but no verified white-gold material is recorded. Samantha’s original description says “white with gold accent.” Correct the listing wording before publishing.</p>';
+   }
+   html+='<details class="listing-review-notes"><summary>Item specifics and review notes</summary><p class="detail-meta">Item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · ')||'None')+'</p></details>';
    if(gates.length||!d.price_cents||!d.category_id){
     const remaining=[...gates,...(!d.price_cents?['Save the asking price']:[]),...(!d.category_id?['Select and save the final eBay category']:[])];
     html+='<p class="detail-meta"><strong>Before approval:</strong> '+esc(remaining.join(' · '))+'. Save warehouse changes in the section above, then reopen this item.</p>';
-   }else html+='<p class="save-notice">Warehouse and listing requirements are complete. Review the description and click Approve draft (internal only).</p>';
+   }else if(!approved)html+='<p class="save-notice">Ready for staff review. Confirm the listing description, then approve internally.</p>';
    html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length||!d.price_cents||!d.category_id?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
    html+='<p class="detail-meta">Save your work anytime. Category ID, asking price and warehouse verification are required only for approval. Nothing is published to eBay.</p></form>';
   }
