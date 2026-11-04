@@ -96,6 +96,27 @@ test('eBay readiness is honest: seller not connected, no sync and no publishing'
  assert.match(await manual.text(),/Manual entry — only when eBay data is unavailable/);
 });
 test('Admin can retrieve submission details and protected photos',async()=>{const rows=(await request('/api/admin/submissions')).data.items;assert.equal(rows.length,1);assert.equal(rows[0].id,submissionId);const r=(await request(`/api/admin/submissions/${submissionId}`)).data;assert.equal(r.photos.length,1);photoId=r.photos[0].id;const ok=await fetch(base+`/api/admin/photos/${photoId}`,{headers:{Cookie:session}});assert.equal(ok.status,200);const denied=await fetch(base+`/api/admin/photos/${photoId}`);assert.equal(denied.status,401);});
+test('Warehouse photos remain separate and listing photo order persists',async()=>{
+ const basePath='/api/admin/submissions/'+submissionId+'/listing-photos';
+ const original=(await request(basePath)).data;
+ assert.equal(original.customer.length,1);assert.equal(original.warehouse.length,0);
+ assert.equal(original.effective[0].id,photoId);
+ const unauth=await fetch(base+basePath);assert.equal(unauth.status,401);
+ const upload=await request(basePath+'/upload',{method:'POST',body:JSON.stringify({photos:[{data:jpeg}]})});
+ assert.equal(upload.r.status,200,JSON.stringify(upload.data));
+ assert.equal(upload.data.customer.length,1);assert.equal(upload.data.warehouse.length,1);
+ const warehouseId=upload.data.warehouse[0].id;
+ assert.notEqual(warehouseId,photoId);
+ const image=await fetch(base+'/api/admin/warehouse-photos/'+warehouseId,{headers:{Cookie:session}});
+ assert.equal(image.status,200);assert.match(image.headers.get('content-type'),/image\/jpeg/);
+ assert.equal((await fetch(base+'/api/admin/warehouse-photos/'+warehouseId)).status,401);
+ const bad=await request(basePath+'/select',{method:'POST',body:JSON.stringify({ids:[warehouseId,'e87d021f-b093-4ce9-9d78-2b61f0ba4db1']})});
+ assert.equal(bad.r.status,400);
+ const saved=await request(basePath+'/select',{method:'POST',body:JSON.stringify({ids:[warehouseId,photoId]})});
+ assert.equal(saved.r.status,200);assert.deepEqual(saved.data.effective.map(p=>p.id),[warehouseId,photoId]);
+ const reopened=await request(basePath);assert.deepEqual(reopened.data.effective.map(p=>p.id),[warehouseId,photoId]);
+ assert.equal(reopened.data.customer.length,1);
+});
 test('Warehouse verification gate blocks listing unreceived merchandise',async()=>{const id=submissionId;const blocked=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'LISTED',receivedVerified:false})});assert.equal(blocked.r.status,409);const allowed=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'RECEIVED',receivedVerified:true,sku:'REST-1',binLocation:'A1',estimateDollars:140})});assert.equal(allowed.r.status,200);const detail=(await request(`/api/admin/submissions/${id}`)).data.item;assert.equal(detail.received_verified,1);assert.equal(detail.estimate_cents,14000);});
 
 
