@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS photos (
  id TEXT PRIMARY KEY, submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
  filename TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS warehouse_photos (id TEXT PRIMARY KEY,submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,filename TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS listing_photo_selection (submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,position INTEGER NOT NULL,photo_id TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN ('customer','warehouse')),PRIMARY KEY(submission_id,position),UNIQUE(submission_id,photo_id));
 CREATE TABLE IF NOT EXISTS mail_outbox (
  id TEXT PRIMARY KEY, submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
  kind TEXT NOT NULL, to_email TEXT NOT NULL, subject TEXT NOT NULL, html TEXT NOT NULL,
@@ -96,7 +98,7 @@ const aiImageExpiresMs=90*60*1000;
 function aiPhotoUrls(sub){
  if(!SESSION_SECRET||!PUBLIC_BASE_URL.startsWith('https://'))throw Object.assign(new Error('Secure HTTPS photo sharing is not configured.'),{status:503});
  const exp=Date.now()+aiImageExpiresMs;
- return db.prepare('SELECT id FROM photos WHERE submission_id=? ORDER BY rowid LIMIT 5').all(sub.id).map(photo=>{
+ return availablePhotos(sub.id).effective.slice(0,5).map(photo=>{
   const message=photo.id+':'+exp;
   const sig=crypto.createHmac('sha256',SESSION_SECRET).update(message).digest('hex');
   return PUBLIC_BASE_URL+'/api/ebay/ai-photo/'+photo.id+'?exp='+exp+'&sig='+sig;
@@ -108,6 +110,14 @@ function publicFile(pathname){const routes={'/':'index.html','/submit':'index.ht
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
 if(emailLogoPng.length<1000||emailLogoPng.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw Error('Invalid SHUKCHIC email PNG asset');
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
+function availablePhotos(id){
+ const customer=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=? ORDER BY rowid').all(id).map(x=>({...x,source:'customer'}));
+ const warehouse=db.prepare('SELECT id,mime,size FROM warehouse_photos WHERE submission_id=? ORDER BY created_at,id').all(id).map(x=>({...x,source:'warehouse'}));
+ const chosen=db.prepare('SELECT photo_id AS id,source FROM listing_photo_selection WHERE submission_id=? ORDER BY position').all(id);
+ const valid=new Set([...customer,...warehouse].map(x=>x.id));
+ const selected=chosen.filter(x=>valid.has(x.id));
+ return {customer,warehouse,selected,effective:chosen.length?selected:customer.slice(0,6).map(x=>({id:x.id,source:'customer'}))};
+}
 function audit(id,event){db.prepare('INSERT INTO admin_events(submission_id,event,created_at) VALUES(?,?,?)').run(id,event,now());}
 async function handle(req,res){
  // Keep temporary Railway staging URLs out of search engines until SHUKCHIC has its own domain.
@@ -126,7 +136,7 @@ async function handle(req,res){
   const validTime=Number.isSafeInteger(exp)&&exp>Date.now()&&exp<=Date.now()+aiImageExpiresMs;
   const expect=validTime?crypto.createHmac('sha256',SESSION_SECRET).update(id+':'+exp).digest('hex'):'';
   if(!SESSION_SECRET||!validTime||!/^[a-f0-9]{64}$/.test(sig)||!crypto.timingSafeEqual(Buffer.from(sig,'hex'),Buffer.from(expect||'0'.repeat(64),'hex')))return problem(res,404,'Image unavailable.');
-  const photo=db.prepare('SELECT p.filename,p.mime FROM photos p JOIN consignment_agreements a ON a.submission_id=p.submission_id WHERE p.id=? AND a.state=?').get(id,'SIGNED');
+  const photo=db.prepare("SELECT filename,mime FROM photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED') UNION ALL SELECT filename,mime FROM warehouse_photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED') LIMIT 1").get(id,id);
   if(!photo)return problem(res,404,'Image unavailable.');
   res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
   res.setHeader('Referrer-Policy','no-referrer');
@@ -366,6 +376,38 @@ async function handle(req,res){
    }
    return problem(res,405,'Method not allowed.');
  }
+ const listingPhotosRoute=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/listing-photos(?:\/(upload|select))?$/);
+ if(listingPhotosRoute){
+  const id=listingPhotosRoute[1],item=db.prepare('SELECT id FROM submissions WHERE id=?').get(id);
+  if(!item)return problem(res,404,'Submission not found.');
+  if(req.method==='GET'&&!listingPhotosRoute[2])return json(res,200,availablePhotos(id));
+  if(req.method==='POST'){
+   if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+   if(!throttle(req,'listing_photos',20,15*60_000))return problem(res,429,'Too many photo changes.');
+   const action=listingPhotosRoute[2],body=await readJson(req,26*1024*1024);
+   if(action==='upload'){
+    if(!Array.isArray(body.photos)||body.photos.length<1||body.photos.length>5)return problem(res,400,'Choose 1–5 warehouse photos at a time.');
+    const images=body.photos.map(parsePhoto),created=[];
+    try{
+     db.exec('BEGIN');
+     for(const img of images){const pid=crypto.randomUUID(),filename=pid+'.'+img.ext;fs.writeFileSync(path.join(UPLOAD_DIR,filename),img.bytes,{flag:'wx',mode:0o600});created.push(filename);
+      db.prepare('INSERT INTO warehouse_photos(id,submission_id,filename,mime,size,created_at) VALUES (?,?,?,?,?,?)').run(pid,id,filename,img.mime,img.bytes.length,now());}
+     db.exec('COMMIT');
+    }catch(err){try{db.exec('ROLLBACK');}catch{}for(const name of created){try{fs.unlinkSync(path.join(UPLOAD_DIR,name));}catch{}}throw err;}
+    audit(id,'WAREHOUSE PHOTOS UPLOADED ('+images.length+')');return json(res,200,availablePhotos(id));
+   }
+   if(action==='select'){
+    const ids=body.ids;if(!Array.isArray(ids)||ids.length<1||ids.length>12||new Set(ids).size!==ids.length||ids.some(x=>typeof x!=='string'||!/^[0-9a-f-]{36}$/.test(x)))return problem(res,400,'Select 1–12 unique photos.');
+    const pool=availablePhotos(id),lookup=new Map([...pool.customer,...pool.warehouse].map(x=>[x.id,x]));
+    if(ids.some(x=>!lookup.has(x)))return problem(res,400,'Photo does not belong to this item.');
+    db.exec('BEGIN');try{db.prepare('DELETE FROM listing_photo_selection WHERE submission_id=?').run(id);ids.forEach((x,n)=>db.prepare('INSERT INTO listing_photo_selection(submission_id,position,photo_id,source) VALUES (?,?,?,?)').run(id,n,x,lookup.get(x).source));db.exec('COMMIT');}catch(err){db.exec('ROLLBACK');throw err;}
+    audit(id,'LISTING PHOTOS SELECTED ('+ids.length+')');return json(res,200,availablePhotos(id));
+   }
+  }
+  return problem(res,405,'Method not allowed.');
+ }
+ const warehouseImage=p.match(/^\/api\/admin\/warehouse-photos\/([0-9a-f-]{36})$/);
+ if(req.method==='GET'&&warehouseImage){const photo=db.prepare('SELECT filename,mime FROM warehouse_photos WHERE id=?').get(warehouseImage[1]);if(!photo)return problem(res,404,'Photo unavailable.');res.setHeader('Cache-Control','private, no-store');return serve(res,path.join(UPLOAD_DIR,path.basename(photo.filename)),photo.mime,true);}
  const taxonomyPath='/api/admin/ebay/category-suggestions';
  if(req.method==='GET'&&p===taxonomyPath){
   if(!admin(req))return problem(res,401,'Admin login required.');
