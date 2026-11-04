@@ -162,3 +162,8 @@
 .listing-photo-card .listing-photo-delete:hover{background:#fff0ee;color:#a52c25;border-color:#e5aca5}
 .listing-photo-card .listing-photo-delete:focus-visible{outline:2px solid #a52c25;outline-offset:2px}
 .listing-photo-card .listing-photo-delete:disabled{opacity:.5;cursor:wait}
+
+.listing-review-notes{margin:10px 0 14px;border-top:1px solid #eee5de;padding-top:9px;font-size:13px}
+.listing-review-notes summary{cursor:pointer;color:#6f625b;font-weight:600}
+.listing-review-notes p{margin:7px 0}
+.listing-claim-warning{margin:12px 0;padding:11px 13px;border-radius:8px;background:#fff4e6;color:#7d491a;border:1px solid #efd8b0;font-size:13px;line-height:1.5}
