@@ -274,6 +274,8 @@ export function createEbayOAuth({
  function disconnect(){
    db.prepare('DELETE FROM ebay_oauth_connection WHERE id=1').run();
    db.prepare('DELETE FROM ebay_oauth_states').run();
+   db.prepare('DELETE FROM ebay_publish_oauth_connection WHERE id=1').run();
+   db.prepare('DELETE FROM ebay_publish_oauth_states').run();
    return {disconnected:true};
  }
  return {status,start,complete,refresh,getAccessToken,getAppAccessToken,disconnect,probe,aiStatus,startAI,completeAI,getAIToken,publishStatus,startPublishing,completePublishing,getPublishingToken};
