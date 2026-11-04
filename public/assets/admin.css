@@ -203,3 +203,13 @@
 .approved-preview-buttons{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
 .approved-preview-buttons .btn[disabled]{opacity:.5;cursor:not-allowed}
 @media(max-width:750px){.approved-preview-content{grid-template-columns:1fr}.approved-item-action{display:none}}
+
+/* Listing queue floats above the unchanged review page, avoiding scroll clamping when switching views. */
+#approvedListings:not([hidden]){position:fixed;inset:4vh 4vw;z-index:1000;display:block;overflow-y:auto;overscroll-behavior:contain;max-height:92vh;box-shadow:0 0 0 100vmax rgba(34,27,24,.42),0 12px 44px rgba(42,30,20,.16);margin:0;padding:22px;border-radius:14px;background:#fff}
+#approvedListings[hidden]{display:none!important}
+.approved-section-heading{position:sticky;top:-22px;background:#fff;z-index:2;padding:8px 0 12px;border-bottom:1px solid #efe7df}
+.approved-section-actions{display:flex;gap:8px;align-items:center}
+.approved-modal-open{overflow:hidden}
+.approved-status{font-size:11px;background:#fff0de;color:#975a2e;border-radius:7px;padding:5px 7px;font-weight:700;white-space:nowrap}
+.approved-status.is-reviewed{background:#dff3e4;color:#176a39}
+@media(max-width:650px){#approvedListings:not([hidden]){inset:1vh 1vw;max-height:98vh;padding:12px}.approved-section-heading{top:-12px}.approved-status{white-space:normal}}

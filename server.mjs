@@ -360,7 +360,7 @@ async function handle(req,res){
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
-  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id WHERE d.status='REVIEWED' ORDER BY d.reviewed_at DESC LIMIT 200").all();
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
   return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
@@ -368,9 +368,10 @@ async function handle(req,res){
   const id=previewRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
   if(!item)return problem(res,404,'Submission not found.');
   const info=listingDrafts.inspect(item),d=info.draft;
-  if(!d||d.status!=='REVIEWED')return problem(res,409,'This item is not staff reviewed.');
+  if(!d)return problem(res,404,'No listing draft exists for this item.');
   const photographs=availablePhotos(id).effective;
   const checks=[
+   ...(d.status!=='REVIEWED'?['Staff review required before publication']:[]),
    ...info.gates,
    ...(!d.price_cents||d.price_cents<1?['Asking price missing']:[]),
    ...(!/^\d+$/.test(String(d.category_id||''))?['A final numeric eBay category ID is required']:[]),
@@ -382,7 +383,7 @@ async function handle(req,res){
   const claim=String(d.description||'');
   if(/\bwhite\s+gold\b/i.test(claim)&&!/\bwhite\s+gold\b/i.test(String(facts.material||'')))checks.push('Verify or remove unconfirmed white-gold metal claim');
   return json(res,200,{
-   previewOnly:true,publishingEnabled:false,submissionId:id,
+   previewOnly:true,publishingEnabled:false,submissionId:id,reviewStatus:d.status,
    reviewedAt:d.reviewed_at,sku:item.sku||'',
    title:d.title,description:d.description,condition:item.condition,
    price:{amount:d.price_cents?+(d.price_cents/100).toFixed(2):null,currency:'USD'},
