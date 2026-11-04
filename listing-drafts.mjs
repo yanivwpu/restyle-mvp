@@ -53,7 +53,8 @@ export function createListingDrafts({db,signing,audit}){
   const itemType=clean(body.itemType,70)||clean(sub.category,70);
   const mismatched=itemType.toLowerCase()==='ear cuff'&&/necklace|pendant/i.test(String(preview.categoryName||''));
   const title=clean([sub.brand,itemType,sub.condition].filter(Boolean).join(' '),80);
-  const description=[clean(sub.brand,100)+' '+itemType, 'Condition: '+clean(sub.condition,80),clean(sub.description,700), 'AI suggested description (verify all claims before using): '+clean(preview.description,3000)].filter(Boolean).join('\n');
+  // Begin with the seller's supplied facts. Keep unverified AI marketing copy in the stored preview, not the customer-facing draft.
+  const description=[clean(sub.brand,100)+' '+itemType, 'Condition: '+clean(sub.condition,80),clean(sub.description,700)].filter(Boolean).join('\n');
   const checks=['Verify category and item specifics before approval','Verify all AI claims; photos do not establish materials or authenticity','Confirm price and shipping terms',...(mismatched?['CATEGORY CONFLICT: eBay suggested '+clean(preview.categoryName,110)+' but staff confirmed '+itemType]:[])];
   const now=new Date().toISOString(),price=existing?.price_cents??null;
   db.prepare("INSERT INTO ebay_listing_drafts (submission_id,status,source,title,description,category_hint,category_id,aspects_json,checks_json,verified_facts_json,price_cents,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO UPDATE SET status='DRAFT',source=excluded.source,title=excluded.title,description=excluded.description,category_hint=excluded.category_hint,category_id=excluded.category_id,aspects_json=excluded.aspects_json,checks_json=excluded.checks_json,verified_facts_json=excluded.verified_facts_json,price_cents=excluded.price_cents,reviewed_at=NULL,updated_at=excluded.updated_at")
