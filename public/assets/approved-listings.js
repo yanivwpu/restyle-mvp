@@ -56,7 +56,15 @@
      }else{
       const data=await fetchData('/api/admin/ebay/publishing/setup');
       const types=[['shipping',data.policies?.fulfillment],['payment',data.policies?.payment],['returns',data.policies?.returns],['inventory locations',data.locations]];
-      publishMessage.textContent=types.map(([name,value])=>name+': '+(value?.available?value.items.length+' available':'not accessible')).join(' · ')+'. All checks read-only; no listing created.';
+      publishMessage.textContent=types.map(([name,value])=>{
+       if(value?.available)return name+': '+value.items.length+' available';
+       return name+': '+(value?.status?'eBay HTTP '+value.status:'connection issue')+(value?.codes?.length?' (error '+value.codes.join(', ')+')':'');
+      }).join(' · ')+'. No listing created.';
+      const failedPolicies=types.slice(0,3).filter(([_,value])=>!value?.available);
+      if(failedPolicies.length){
+       const allForbidden=failedPolicies.every(([_,value])=>value?.status===403);
+       publishMessage.textContent+=' '+(allForbidden?'eBay has denied business-policy access. Check whether this seller is enrolled in eBay Business Policies and whether the app has Account API access.':'The error codes above will help identify missing permissions or seller setup.');
+      }
      }
     }catch(err){publishMessage.textContent='eBay setup: '+err.message;}
     finally{connectionButton.disabled=false;}

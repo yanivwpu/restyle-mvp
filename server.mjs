@@ -310,10 +310,17 @@ async function handle(req,res){
   const read=async(path,key)=>{
    try{
     const response=await fetch('https://api.ebay.com'+path,{headers,signal:AbortSignal.timeout(9000)});
-    if(!response.ok)return {available:false,status:response.status,items:[]};
+    if(!response.ok){
+     // Only show eBay's numeric codes and general error categories, never account data, URLs or bearer tokens.
+     let codes=[];try{
+      const body=await response.json();
+      if(Array.isArray(body.errors))codes=body.errors.map(e=>Number(e.errorId)).filter(Number.isFinite).slice(0,3);
+     }catch{}
+     return {available:false,status:response.status,codes,items:[]};
+    }
     const data=await response.json(),raw=Array.isArray(data[key])?data[key]:[];
     return {available:true,status:200,items:raw.map(x=>({id:String(x.fulfillmentPolicyId||x.paymentPolicyId||x.returnPolicyId||x.merchantLocationKey||''),name:String(x.name||x.merchantLocationKey||'').slice(0,120)})).filter(x=>x.id)};
-   }catch{return {available:false,status:null,items:[]};}
+   }catch(err){return {available:false,status:null,reason:err?.name==='TimeoutError'?'timeout':'network',items:[]};}
   };
   const [fulfillment,payment,returns,locations]=await Promise.all([
    read('/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US','fulfillmentPolicies'),
