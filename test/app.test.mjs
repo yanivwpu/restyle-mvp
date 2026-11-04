@@ -87,7 +87,7 @@ test('Authorized eBay preview is synthetic, holds all payouts and does not updat
 test('eBay readiness is honest: seller not connected, no sync and no publishing',async()=>{
  const result=await request('/api/admin/ebay/status');
  assert.equal(result.r.status,200);
- assert.equal(result.data.seller,'ssammikat99u2');
+ assert.equal(result.data.seller,'shukchic');
  assert.equal(result.data.sellerConnected,false);
  assert.equal(result.data.syncEnabled,false);
  assert.equal(result.data.listingPublishEnabled,false);
