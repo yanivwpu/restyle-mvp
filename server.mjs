@@ -334,7 +334,7 @@ async function handle(req,res){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const oauth=ebayOAuth.status();
   const developerConfigured=oauth.configured;
-  return json(res,200,{ai:ebayOAuth.aiStatus(),provider:'eBay',seller:'ssammikat99u2',accountDeletion:ebayDeletion.summary(),developerConfigured,sellerConnected:oauth.connected,sellerUsername:oauth.sellerUsername,oauth,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
+  return json(res,200,{ai:ebayOAuth.aiStatus(),provider:'eBay',seller:oauth.sellerUsername||oauth.expectedUsername,accountDeletion:ebayDeletion.summary(),developerConfigured,sellerConnected:oauth.connected,sellerUsername:oauth.sellerUsername,oauth,syncEnabled:false,listingPublishEnabled:false,needs:['eBay Developer app credentials and RuName','Seller OAuth authorization','Read-only sales and financial reconciliation'],syncFields:['Selling price','eBay transaction fees','eBay-funded shipping labels','Refunds and credits','Shipping and tracking'],manualExceptions:['Labels paid outside eBay funds','Delivery confirmation unavailable','Unresolved return or dispute'],developerUrl:'https://developer.ebay.com/my/keys'});
  }
  // All authorization management is admin-only and POST-only. No live eBay
  // sale imports, listing writes or payouts are enabled by this connection.
