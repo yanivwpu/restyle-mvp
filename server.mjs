@@ -147,13 +147,15 @@ async function handle(req,res){
    let good=false;
    try{
      const returnedState=url.searchParams.get('state');
-     const aiAttempt=typeof returnedState==='string' && db.prepare('SELECT 1 FROM ebay_ai_oauth_states WHERE state_hash=?').get(crypto.createHash('sha256').update(returnedState).digest('hex'));
-     const result=await (aiAttempt?ebayOAuth.completeAI:ebayOAuth.complete)({
+     const stateHash=typeof returnedState==='string'?crypto.createHash('sha256').update(returnedState).digest('hex'):'';
+     const aiAttempt=stateHash&&db.prepare('SELECT 1 FROM ebay_ai_oauth_states WHERE state_hash=?').get(stateHash);
+     const publishingAttempt=stateHash&&db.prepare('SELECT 1 FROM ebay_publish_oauth_states WHERE state_hash=?').get(stateHash);
+     const result=await (publishingAttempt?ebayOAuth.completePublishing:aiAttempt?ebayOAuth.completeAI:ebayOAuth.complete)({
        state:url.searchParams.get('state'),
        code:url.searchParams.get('code'),
        error:url.searchParams.get('error')
      });
-     good=true;message=result.ai?'eBay AI permission connected for '+result.sellerUsername+'. Standard sales connection was preserved. Return to Admin.':'The authorized seller '+result.sellerUsername+' is now linked to SHUKCHIC. Return to Admin to review the connection.';
+     good=true;message=result.publishingAuthorization?'Publishing preparation permission connected for '+result.sellerUsername+'. No listing was published.':result.ai?'eBay AI permission connected for '+result.sellerUsername+'. Standard sales connection was preserved. Return to Admin.':'The authorized seller '+result.sellerUsername+' is now linked to SHUKCHIC. Return to Admin to review the connection.';
    }catch(err){message=err.status===503?'SHUKCHIC eBay authorization is not configured yet. No account was connected.':err.message;}
    res.writeHead(good?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
    return res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SHUKCHIC — eBay authorization</title><body style="font:16px Arial,sans-serif;max-width:650px;margin:12vh auto;padding:24px;color:#242225"><h1>'+ (good?'eBay seller connected':'eBay connection not completed') +'</h1><p>'+htmlEscape(message)+'</p><p>No listings were published and no sales were imported.</p><a href="/admin">Return to SHUKCHIC Admin</a></body></html>');
@@ -310,6 +312,7 @@ async function handle(req,res){
    if(p==='/api/admin/ebay/oauth/probe')return json(res,200,await ebayOAuth.probe());
    if(p==='/api/admin/ebay/oauth/start')return json(res,200,ebayOAuth.start());
    if(p==='/api/admin/ebay/oauth/ai-start')return json(res,200,ebayOAuth.startAI());
+   if(p==='/api/admin/ebay/oauth/publishing-start')return json(res,200,ebayOAuth.startPublishing());
    if(p==='/api/admin/ebay/oauth/refresh')return json(res,200,await ebayOAuth.refresh());
    if(p==='/api/admin/ebay/oauth/disconnect')return json(res,200,ebayOAuth.disconnect());
    return problem(res,404,'Unknown OAuth action.');
