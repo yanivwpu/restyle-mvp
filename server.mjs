@@ -389,7 +389,17 @@ async function handle(req,res){
    price:{amount:d.price_cents?+(d.price_cents/100).toFixed(2):null,currency:'USD'},
    category:{id:d.category_id||'',label:d.category_hint||''},
    photos:photographs.map((photo,index)=>({id:photo.id,source:photo.source,position:index+1,url:'/api/admin/'+(photo.source==='warehouse'?'warehouse-photos/':'photos/')+photo.id})),
-   itemSpecifics:d.aspects||{},checks,readyForPublishingPreparation:checks.length===0,
+   // Verified form values are independent from the free-text description. Present them as listing specifics.
+   itemSpecifics:{
+    ...(d.aspects||{}),
+    ...(facts.category?{'Item type':facts.category}:{}),
+    ...(facts.color?{Color:facts.color}:{}),
+    ...(facts.size?{Size:facts.size}:{}),
+    ...(facts.material?{Material:facts.material}:{}),
+    ...(facts.measurements?{Measurements:facts.measurements}:{}),
+    ...(facts.flaws?{'Known wear / flaws':facts.flaws}:{})
+   },
+   checks,readyForPublishingPreparation:checks.length===0,
    requiredBeforeLive:['Validate required eBay item specifics for the selected category','Verify eBay fulfillment, payment and return policies','Create inventory and offer only after explicit staff approval and separate publication enablement'],
    note:'Internal preview. No listing, offer, inventory or publication was created on eBay.'
   });

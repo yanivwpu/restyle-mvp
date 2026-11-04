@@ -213,3 +213,9 @@
 .approved-status{font-size:11px;background:#fff0de;color:#975a2e;border-radius:7px;padding:5px 7px;font-weight:700;white-space:nowrap}
 .approved-status.is-reviewed{background:#dff3e4;color:#176a39}
 @media(max-width:650px){#approvedListings:not([hidden]){inset:1vh 1vw;max-height:98vh;padding:12px}.approved-section-heading{top:-12px}.approved-status{white-space:normal}}
+
+.approved-specifics{margin:14px 0;padding:12px 0;border-top:1px solid #eee5de;border-bottom:1px solid #eee5de}
+.approved-specifics h4{margin:0 0 10px;font-size:13px}
+.approved-specifics dl{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px 18px}
+.approved-specifics dt{font-size:11px;color:#746b63}
+.approved-specifics dd{margin:3px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
