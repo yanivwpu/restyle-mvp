@@ -116,6 +116,17 @@ test('Warehouse photos remain separate and listing photo order persists',async()
  assert.equal(saved.r.status,200);assert.deepEqual(saved.data.effective.map(p=>p.id),[warehouseId,photoId]);
  const reopened=await request(basePath);assert.deepEqual(reopened.data.effective.map(p=>p.id),[warehouseId,photoId]);
  assert.equal(reopened.data.customer.length,1);
+ const blocked=await request('/api/admin/submissions/'+submissionId+'/warehouse-photos/'+photoId,{method:'DELETE'});
+ assert.equal(blocked.r.status,404,'Customer original must never be deleted by warehouse delete');
+ const deleted=await request('/api/admin/submissions/'+submissionId+'/warehouse-photos/'+warehouseId,{method:'DELETE'});
+ assert.equal(deleted.r.status,200);
+ assert.equal(deleted.data.customer.length,1);
+ assert.equal(deleted.data.warehouse.length,0);
+ assert.deepEqual(deleted.data.effective.map(x=>x.id),[photoId]);
+ assert.equal((await fetch(base+'/api/admin/warehouse-photos/'+warehouseId,{headers:{Cookie:session}})).status,404);
+ assert.equal((await fetch(base+'/api/admin/photos/'+photoId,{headers:{Cookie:session}})).status,200);
+ const duplicate=await request('/api/admin/submissions/'+submissionId+'/warehouse-photos/'+warehouseId,{method:'DELETE'});
+ assert.equal(duplicate.r.status,404);
 });
 test('Warehouse verification gate blocks listing unreceived merchandise',async()=>{const id=submissionId;const blocked=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'LISTED',receivedVerified:false})});assert.equal(blocked.r.status,409);const allowed=await request(`/api/admin/submissions/${id}/update`,{method:'POST',body:JSON.stringify({status:'RECEIVED',receivedVerified:true,sku:'REST-1',binLocation:'A1',estimateDollars:140})});assert.equal(allowed.r.status,200);const detail=(await request(`/api/admin/submissions/${id}`)).data.item;assert.equal(detail.received_verified,1);assert.equal(detail.estimate_cents,14000);});
 
