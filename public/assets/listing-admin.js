@@ -33,7 +33,7 @@
     const remaining=[...gates,...(!d.price_cents?['Save the asking price']:[]),...(!d.category_id?['Select and save the final eBay category']:[])];
     html+='<p class="detail-meta"><strong>Before approval:</strong> '+esc(remaining.join(' · '))+'. Save warehouse changes in the section above, then reopen this item.</p>';
    }else if(!approved)html+='<p class="save-notice">Ready for staff review. Confirm the listing description, then approve internally.</p>';
-   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length||!d.price_cents||!d.category_id?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
+   html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length||!d.price_cents||!d.category_id?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Save & review')+'</button></div>';
    html+='<p class="detail-meta">Save your work anytime. Category ID, asking price and warehouse verification are required only for approval. Nothing is published to eBay.</p></form>';
   }
   html+='<div class="listing-mapping-info"><strong>AI listing preparation</strong><p id="mappingResult" role="status">Checking the draft…</p><button class="btn btn-outline" id="mappingRegenerate" type="button">Regenerate AI listing</button></div>';  html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
@@ -154,12 +154,26 @@
     }catch(err){status(err.message);}
   });
   syncAI();
+  function changedState(data,op){
+    if(!data.draft)return;
+    Object.assign(d,data.draft);
+    const reviewed=d.status==='REVIEWED';
+    const banner=div.querySelector('.listing-review-status');
+    if(banner){
+      banner.classList.toggle('is-reviewed',reviewed);
+      banner.querySelector('strong').textContent=reviewed?'✓ Staff reviewed — not published':'Draft ready for review';
+      banner.querySelector('p').textContent=reviewed?'All displayed listing edits saved and internally reviewed. No eBay listing exists.':'Latest changes saved as draft. Approve when ready.';
+    }
+    const approval=div.querySelector('#listingApprove');
+    if(approval){approval.textContent=reviewed?'✓ Staff reviewed':'Save & review';approval.disabled=reviewed;}
+    feedback.textContent=reviewed?'Listing details and verified item information saved and staff reviewed. Nothing published to eBay.':'Draft and verified item details saved successfully.';
+    feedback.setAttribute('role','status');
+  }
   async function act(op,payload){
-   feedback.textContent='Processing…';
+   feedback.textContent=op==='approve'?'Saving and reviewing the latest edits…':'Saving listing and verified details…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
    const data=await result.json();if(!result.ok)throw Error(data.error||'Unable to complete listing action.');
-   if(op==='save'){feedback.textContent='Draft saved successfully. You can continue editing later.';feedback.setAttribute('role','status');return;}
-   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Draft approved internally. Nothing published to eBay.';
+   changedState(data,op);
   }
   const edit=div.querySelector('#listingEdit');
   if(edit){
@@ -220,12 +234,38 @@
    }
    if(d.category_id)hint.textContent='Saved eBay category #'+d.category_id+'. Change the dropdowns only if needed.';
    loadCategories();
-   edit.addEventListener('submit',async event=>{
-    event.preventDefault();const b={};for(const name of ['title','price','description','categorySuggestion','categoryId'])b[name]=edit.elements[name].value;
-    const btn=edit.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
-    try{await act('save',b);}catch(err){feedback.textContent=err.message;}finally{if(btn)btn.disabled=false;}
-   });
-   edit.querySelector('#listingApprove').addEventListener('click',async()=>{try{await act('approve',{});}catch(err){feedback.textContent=err.message;}});
+   const factsForm=div.querySelector('#listingGenerate'),approveButton=edit.querySelector('#listingApprove'),saveButton=edit.querySelector('button[type="submit"]');
+   function draftPayload(){
+     const b={};for(const name of ['title','price','description','categorySuggestion','categoryId'])b[name]=edit.elements[name].value;
+     b.verifiedFacts={};for(const name of ['itemType','size','color','material','measurements','flaws','facts'])b.verifiedFacts[name]=factsForm.elements[name].value;
+     return b;
+   }
+   let pending=false;
+   async function submitDraft(op){
+     if(pending)return;
+     pending=true;saveButton.disabled=true;approveButton.disabled=true;
+     try{await act(op,draftPayload());}catch(err){feedback.textContent='Not saved: '+err.message;}
+     finally{
+       pending=false;saveButton.disabled=false;
+       if(d.status!=='REVIEWED')approveButton.disabled=!!(gates.length||!edit.elements.price.value||!edit.elements.categoryId.value);
+     }
+   }
+   function markUnsaved(e){
+     if(!e.isTrusted)return;
+     const banner=div.querySelector('.listing-review-status');
+     if(banner){
+       banner.classList.remove('is-reviewed');
+       banner.querySelector('strong').textContent='Unsaved changes';
+       banner.querySelector('p').textContent='Save draft or select Save & review to apply these changes.';
+     }
+     approveButton.textContent='Save & review';
+     approveButton.disabled=!!(gates.length||!edit.elements.price.value||!edit.elements.categoryId.value);
+     feedback.textContent='Unsaved changes';
+   }
+   factsForm.addEventListener('input',markUnsaved);edit.addEventListener('input',markUnsaved);
+   edit.addEventListener('change',markUnsaved);
+   edit.addEventListener('submit',async event=>{event.preventDefault();await submitDraft('save');});
+   approveButton.addEventListener('click',async()=>submitDraft('approve'));
   }
  }
  window.restyleListingPanel={mount:render};
