@@ -115,3 +115,36 @@ test('cannot connect when eBay identity API fails; state is consumed',async()=>{
  await assert.rejects(oauth.complete({state:nonce,code:'ebay-one-use-code-123456789'}),e=>e.status===400);
  db.close();
 });
+
+
+test('publishing consent is separate, seller-verified, non-publishing, and revokes on disconnect',async()=>{
+ const {db,oauth,posts}=setup();
+ assert.equal(oauth.publishStatus().connected,false);
+ assert.throws(()=>oauth.startPublishing(),e=>e.status===409);
+ await oauth.complete({state:state(oauth.start()),code:'ebay-one-use-code-123456789'});
+ const standard=db.prepare('SELECT token_cipher FROM ebay_oauth_connection WHERE id=1').get().token_cipher;
+ const start=oauth.startPublishing(),url=new URL(start.authorizationUrl);
+ assert(url.searchParams.get('scope').includes('sell.inventory'));
+ assert(url.searchParams.get('scope').includes('sell.account.readonly'));
+ assert.equal(start.publishingEnabled,false);
+ const id=state(start);
+ const response=await oauth.completePublishing({state:id,code:'ebay-publish-code-123456789'});
+ assert.equal(response.publishingEnabled,false);
+ assert.equal(oauth.publishStatus().connected,true);
+ assert.equal(db.prepare('SELECT token_cipher FROM ebay_oauth_connection WHERE id=1').get().token_cipher,standard);
+ assert.equal(await oauth.getPublishingToken(),access);
+ assert.equal(posts.at(-1).get('grant_type'),'authorization_code');
+ await assert.rejects(oauth.completePublishing({state:id,code:'ebay-publish-code-123456789'}),e=>e.status===400);
+ assert.equal(oauth.disconnect().disconnected,true);
+ assert.equal(oauth.publishStatus().connected,false);
+ assert.equal(db.prepare('SELECT * FROM ebay_publish_oauth_connection').get(),undefined);
+ db.close();
+});
+test('wrong eBay seller cannot authorize publishing over a connected account',async()=>{
+ const {db,oauth}=setup();
+ await oauth.complete({state:state(oauth.start()),code:'ebay-one-use-code-123456789'});
+ db.prepare("UPDATE ebay_oauth_connection SET seller_user_id='another-seller' WHERE id=1").run();
+ await assert.rejects(oauth.completePublishing({state:state(oauth.startPublishing()),code:'ebay-publish-code-123456789'}),e=>e.status===409);
+ assert.equal(oauth.publishStatus().connected,false);
+ db.close();
+});
