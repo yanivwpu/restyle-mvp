@@ -62,17 +62,52 @@ export function createListingDrafts({db,signing,audit}){
   audit(sub.id,'EBAY AI PREVIEW IMPORTED INTO EDITABLE DRAFT (NOT PUBLISHED)');
   return inspect(sub);
  }
- function save(sub,body){if(draftGates(sub).length)throw Object.assign(new Error('Listing draft gates not satisfied.'),{status:409});if(!draft(sub.id))throw Object.assign(new Error('Generate a draft first.'),{status:409});
- const title=clean(body.title,80),desc=clean(body.description,5000),hint=clean(body.categorySuggestion,180),cid=clean(body.categoryId,20),price=Number(body.price);
- if(title.length<5||desc.length<30)throw Object.assign(new Error('Title and description required.'),{status:400});
- if(cid&&!/^[0-9]{1,20}$/.test(cid))throw Object.assign(new Error('eBay category ID must be numeric.'),{status:400});
- if(clean(body.price)&&(!Number.isFinite(price)||price<=0||price>100000))throw Object.assign(new Error('Enter a positive asking price, or leave it blank to save for later.'),{status:400});
- const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET title=?,description=?,category_hint=?,category_id=?,price_cents=?,status='DRAFT',reviewed_at=NULL,updated_at=? WHERE submission_id=?").run(title,desc,hint,cid,clean(body.price)?Math.round(price*100):null,now,sub.id);
- audit(sub.id,'LISTING DRAFT EDITED');return inspect(sub);}
- function approve(sub){if(gates(sub).length)throw Object.assign(new Error('Listing gates not satisfied.'),{status:409});const d=draft(sub.id);
- if(!d||!d.category_id||!d.price_cents||!d.title||!d.description)throw Object.assign(new Error('Save the price, eBay category ID, title and description first.'),{status:409});
- if(d.status==='REVIEWED')return inspect(sub);
- if(!Object.keys(d.verifiedFacts||{}).length)throw Object.assign(new Error('Verified warehouse facts are required.'),{status:409});
- const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET status='REVIEWED',reviewed_at=?,updated_at=? WHERE submission_id=?").run(now,now,sub.id);audit(sub.id,'LISTING DRAFT REVIEWED (NOT PUBLISHED)');return inspect(sub);}
+ function save(sub,body){
+  if(draftGates(sub).length)throw Object.assign(new Error('Listing draft requirements not satisfied.'),{status:409});
+  const prior=draft(sub.id);if(!prior)throw Object.assign(new Error('Generate a draft first.'),{status:409});
+  const title=clean(body.title,80),desc=clean(body.description,5000),hint=clean(body.categorySuggestion,180),cid=clean(body.categoryId,20),price=Number(body.price);
+  if(title.length<5||desc.length<30)throw Object.assign(new Error('Title and description required.'),{status:400});
+  if(cid&&!/^[0-9]{1,20}$/.test(cid))throw Object.assign(new Error('eBay category ID must be numeric.'),{status:400});
+  if(clean(body.price)&&(!Number.isFinite(price)||price<=0||price>100000))throw Object.assign(new Error('Enter a positive asking price, or leave it blank to save for later.'),{status:400});
+  const received=body.verifiedFacts;
+  let facts=prior.verifiedFacts||{};
+  if(received!==undefined){
+   if(!received||typeof received!=='object'||Array.isArray(received))throw Object.assign(new Error('Invalid verified item details.'),{status:400});
+   facts={...facts,...factsFor(sub,{...facts,itemType:received.itemType??facts.category,color:received.color??facts.color,size:received.size??facts.size,material:received.material??facts.material,measurements:received.measurements??facts.measurements,flaws:received.flaws??facts.flaws,facts:received.facts??facts.facts})};
+  }
+  const aspects={...prior.aspects};
+  // Keep staff-verified item specifics aligned with the final listing draft.
+  for(const [key,value] of [['Item type',facts.category],['Color',facts.color],['Size',facts.size],['Material',facts.material]]){
+   if(value)aspects[key]=value;
+   else delete aspects[key];
+  }
+  const now=new Date().toISOString();
+  db.prepare("UPDATE ebay_listing_drafts SET title=?,description=?,category_hint=?,category_id=?,price_cents=?,aspects_json=?,verified_facts_json=?,status='DRAFT',reviewed_at=NULL,updated_at=? WHERE submission_id=?")
+   .run(title,desc,hint,cid,clean(body.price)?Math.round(price*100):null,JSON.stringify(aspects),JSON.stringify(facts),now,sub.id);
+  audit(sub.id,'LISTING DRAFT EDITED');
+  return inspect(sub);
+ }
+ function approve(sub,body){
+  // An edit + approval is atomic: failed approval cannot leave a fake success or half-saved review.
+  if(body&&Object.keys(body).length){
+   db.exec('BEGIN');
+   try{
+    save(sub,body);
+    const result=approveStored(sub);
+    db.exec('COMMIT');
+    return result;
+   }catch(err){db.exec('ROLLBACK');throw err;}
+  }
+  return approveStored(sub);
+ }
+ function approveStored(sub){
+  if(gates(sub).length)throw Object.assign(new Error('Listing requirements not satisfied: '+gates(sub).join('; ')),{status:409});
+  const d=draft(sub.id);
+  if(!d||!d.category_id||!d.price_cents||!d.title||!d.description)throw Object.assign(new Error('Save the price, eBay category, title and description first.'),{status:409});
+  if(d.status==='REVIEWED')return inspect(sub);
+  if(!Object.keys(d.verifiedFacts||{}).length)throw Object.assign(new Error('Verified item facts are required.'),{status:409});
+  const now=new Date().toISOString();db.prepare("UPDATE ebay_listing_drafts SET status='REVIEWED',reviewed_at=?,updated_at=? WHERE submission_id=?").run(now,now,sub.id);
+  audit(sub.id,'LISTING DRAFT REVIEWED (NOT PUBLISHED)');return inspect(sub);
+ }
  return {inspect,generate,save,approve,importEbay};
 }
