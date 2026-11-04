@@ -520,10 +520,10 @@ async function handle(req,res){
   if(req.method==='GET'&&!action)return json(res,200,listingDrafts.inspect(item));
   if(req.method==='POST'&&action){
    if(!throttle(req,'listing_'+action,15,15*60_000))return problem(res,429,'Too many listing draft requests.');
-   const body=action==='approve'?{}:await readJson(req,8000);
+   const body=await readJson(req,8000);
    if(action==='generate')return json(res,200,await listingDrafts.generate(item,body));
    if(action==='save')return json(res,200,listingDrafts.save(item,body));
-   if(action==='approve')return json(res,200,listingDrafts.approve(item));
+   if(action==='approve')return json(res,200,listingDrafts.approve(item,body));
   }
   return problem(res,405,'Method not allowed.');
  }
