@@ -75,7 +75,8 @@
    feedback.textContent='Processing…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
    const data=await result.json();if(!result.ok)throw Error(data.error||'Unable to complete listing action.');
-   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent=op==='save'?'Draft saved successfully. You can continue editing later.':'Draft approved internally. Nothing published to eBay.';
+   if(op==='save'){d=data.draft||d;feedback.textContent='Draft saved successfully. You can continue editing later.';feedback.setAttribute('role','status');return;}
+   render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Draft approved internally. Nothing published to eBay.';
   }
   const edit=div.querySelector('#listingEdit');
   if(edit){
@@ -138,7 +139,8 @@
    loadCategories();
    edit.addEventListener('submit',async event=>{
     event.preventDefault();const b={};for(const name of ['title','price','description','categorySuggestion','categoryId'])b[name]=edit.elements[name].value;
-    try{await act('save',b);}catch(err){feedback.textContent=err.message;}
+    const btn=edit.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
+    try{await act('save',b);}catch(err){feedback.textContent=err.message;}finally{if(btn)btn.disabled=false;}
    });
    edit.querySelector('#listingApprove').addEventListener('click',async()=>{try{await act('approve',{});}catch(err){feedback.textContent=err.message;}});
   }
