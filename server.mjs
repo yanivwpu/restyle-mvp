@@ -358,6 +358,41 @@ async function handle(req,res){
    return json(res,201,{ok:true,id,emailStatus:recorded.email_status});
  }
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
+ // Internal read-only approved listings. No eBay inventory or offer writes occur here.
+ if(req.method==='GET'&&p==='/api/admin/approved-listings'){
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id WHERE d.status='REVIEWED' ORDER BY d.reviewed_at DESC LIMIT 200").all();
+  return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null};}),publishingEnabled:false});
+ }
+ const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
+ if(req.method==='GET'&&previewRoute){
+  const id=previewRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
+  if(!item)return problem(res,404,'Submission not found.');
+  const info=listingDrafts.inspect(item),d=info.draft;
+  if(!d||d.status!=='REVIEWED')return problem(res,409,'This item is not staff reviewed.');
+  const photographs=availablePhotos(id).effective;
+  const checks=[
+   ...info.gates,
+   ...(!d.price_cents||d.price_cents<1?['Asking price missing']:[]),
+   ...(!/^\d+$/.test(String(d.category_id||''))?['A final numeric eBay category ID is required']:[]),
+   ...(photographs.length===0?['Select at least one listing photograph']:[]),
+   ...(d.title.length>80?['Listing title exceeds 80 characters']:[]),
+   ...(!d.description.trim()?['Listing description is empty']:[])
+  ];
+  const facts=d.verifiedFacts||{};
+  const claim=String(d.description||'');
+  if(/\bwhite\s+gold\b/i.test(claim)&&!/\bwhite\s+gold\b/i.test(String(facts.material||'')))checks.push('Verify or remove unconfirmed white-gold metal claim');
+  return json(res,200,{
+   previewOnly:true,publishingEnabled:false,submissionId:id,
+   reviewedAt:d.reviewed_at,sku:item.sku||'',
+   title:d.title,description:d.description,condition:item.condition,
+   price:{amount:d.price_cents?+(d.price_cents/100).toFixed(2):null,currency:'USD'},
+   category:{id:d.category_id||'',label:d.category_hint||''},
+   photos:photographs.map((photo,index)=>({id:photo.id,source:photo.source,position:index+1,url:'/api/admin/'+(photo.source==='warehouse'?'warehouse-photos/':'photos/')+photo.id})),
+   itemSpecifics:d.aspects||{},checks,readyForPublishingPreparation:checks.length===0,
+   requiredBeforeLive:['Validate required eBay item specifics for the selected category','Verify eBay fulfillment, payment and return policies','Create inventory and offer only after explicit staff approval and separate publication enablement'],
+   note:'Internal preview. No listing, offer, inventory or publication was created on eBay.'
+  });
+ }
  if(req.method==='GET'&&p==='/api/admin/submissions'){
    const rows=db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count, (SELECT p.id FROM photos p WHERE p.submission_id=s.id ORDER BY p.rowid LIMIT 1) AS first_photo FROM submissions s ORDER BY s.created_at DESC LIMIT 500`).all();return json(res,200,{items:rows});
  }
