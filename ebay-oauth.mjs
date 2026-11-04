@@ -39,7 +39,7 @@ const wait=async(fetcher,url,opt)=>{let response;
 export function createEbayOAuth({
  db,clientId=process.env.EBAY_CLIENT_ID,clientSecret=process.env.EBAY_CLIENT_SECRET,
  ruName=process.env.EBAY_RUNAME,encryptionKey=process.env.EBAY_OAUTH_ENCRYPTION_KEY,
- expectedUsername='ssammikat99u2',fetcher=fetch,clock=()=>Date.now()
+ expectedUsername='shukchic',fetcher=fetch,clock=()=>Date.now()
 }={}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_oauth_states (state_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)");
  db.exec("CREATE TABLE IF NOT EXISTS ebay_ai_oauth_connection (id INTEGER PRIMARY KEY CHECK(id=1), seller_user_id TEXT NOT NULL,seller_username TEXT NOT NULL,token_cipher TEXT NOT NULL,access_expires_at INTEGER NOT NULL,refresh_expires_at INTEGER NOT NULL,connected_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -211,7 +211,12 @@ export function createEbayOAuth({
    const username=String(user?.username||'').trim();
    const userId=String(user?.userId||'').trim();
    if(!username||!userId||username.length>180||userId.length>180)throw fail(409,'Could not verify eBay seller identity. No account connected.');
-   if(norm(username)!==norm(expectedUsername))throw fail(409,'Wrong eBay seller account. Sign in as '+expectedUsername+' instead.');
+   // An eBay username can change; the immutable seller user ID is the authority for an existing connection.
+   // Only a first-time connection uses the configured expected username.
+   const knownSeller=readRow();
+   if(knownSeller){
+     if(userId!==knownSeller.seller_user_id)throw fail(409,'Wrong eBay seller account. The authorized seller ID does not match the existing SHUKCHIC account.');
+   }else if(norm(username)!==norm(expectedUsername))throw fail(409,'Wrong eBay seller account. Sign in as '+expectedUsername+' instead.');
    return {username,userId};
  }
  async function complete({state,code,error}){

@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createEbayOAuth} from '../ebay-oauth.mjs';
 const cred={clientId:'example-production-client-id',clientSecret:'example-production-client-secret',ruName:'Samantha-SHUKCHIC-PRD-example-ruName',encryptionKey:crypto.randomBytes(32).toString('base64url')};
 const access='example-access-token-1234567890',refresh='example-refresh-token-1234567890';
-function setup({username='ssammikat99u2',failIdentity=false}={}){
+function setup({username='shukchic',failIdentity=false}={}){
  const db=new DatabaseSync(':memory:');
  let now=Date.parse('2026-10-28T00:00:00.000Z'),posts=[],calls=[];
  const fetcher=async (url,opts)=>{
@@ -54,7 +54,7 @@ test('valid consent verifies seller before storing AES-GCM encrypted tokens, rej
  const nonce=state(oauth.start());
  const result=await oauth.complete({state:nonce,code:'ebay-one-use-code-123456789'});
  assert.equal(result.connected,true);
- assert.equal(oauth.status().sellerUsername,'ssammikat99u2');
+ assert.equal(oauth.status().sellerUsername,'shukchic');
  const row=db.prepare('SELECT * FROM ebay_oauth_connection').get();
  assert.equal(row.seller_user_id,'u-seller-001');
  assert.equal(row.token_cipher.startsWith('v1.'),true);
@@ -64,6 +64,24 @@ test('valid consent verifies seller before storing AES-GCM encrypted tokens, rej
  await assert.rejects(oauth.complete({state:nonce,code:'ebay-one-use-code-123456789'}),e=>e.status===400);
  assert.equal(oauth.status().dataSyncEnabled,false);
  assert.equal(oauth.status().listingPublishingEnabled,false);
+ db.close();
+});
+test('renamed seller reconnect succeeds only when immutable seller ID matches',async()=>{
+ const {db,oauth}=setup({username:'shukchic'});
+ await oauth.complete({state:state(oauth.start()),code:'ebay-first-code-123456789'});
+ db.prepare("UPDATE ebay_oauth_connection SET seller_username='ssammikat99u2' WHERE id=1").run();
+ const renewed=await oauth.complete({state:state(oauth.start()),code:'ebay-second-code-123456789'});
+ assert.equal(renewed.connected,true);
+ assert.equal(oauth.status().sellerUsername,'shukchic');
+ assert.equal(db.prepare('SELECT seller_user_id FROM ebay_oauth_connection WHERE id=1').get().seller_user_id,'u-seller-001');
+ db.close();
+});
+test('renamed username must not bypass existing seller ID mismatch',async()=>{
+ const {db,oauth}=setup({username:'shukchic'});
+ await oauth.complete({state:state(oauth.start()),code:'ebay-first-code-123456789'});
+ db.prepare("UPDATE ebay_oauth_connection SET seller_user_id='another-seller',seller_username='ssammikat99u2' WHERE id=1").run();
+ await assert.rejects(oauth.complete({state:state(oauth.start()),code:'ebay-second-code-123456789'}),e=>e.status===409);
+ assert.equal(db.prepare('SELECT seller_user_id FROM ebay_oauth_connection WHERE id=1').get().seller_user_id,'another-seller');
  db.close();
 });
 test('wrong eBay username never persists tokens or a linked seller',async()=>{
