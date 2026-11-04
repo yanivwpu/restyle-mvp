@@ -320,7 +320,7 @@ async function handle(req,res){
     }
     const data=await response.json(),raw=Array.isArray(data[key])?data[key]:[];
     return {available:true,status:200,items:raw.map(x=>({id:String(x.fulfillmentPolicyId||x.paymentPolicyId||x.returnPolicyId||x.merchantLocationKey||''),name:String(x.name||x.merchantLocationKey||'').slice(0,120)})).filter(x=>x.id)};
-   }catch(err){return {available:false,status:null,reason:err?.name==='TimeoutError'?'timeout':'network',items:[]};}};
+   }catch(err){return {available:false,status:null,reason:err?.name==='TimeoutError'?'timeout':'network',items:[]};}
   };
   const [fulfillment,payment,returns,locations]=await Promise.all([
    read('/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US','fulfillmentPolicies'),
