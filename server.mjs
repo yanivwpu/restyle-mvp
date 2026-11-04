@@ -297,6 +297,32 @@ async function handle(req,res){
    }),note:'Read-only paged preview. Item photos appear only when supplied by eBay. No imports or payouts.'});
   }catch(err){return problem(res,err.status||502,'eBay order preview unavailable: '+(err.status?err.message:'Connection or response failure.'));}
  }
+ if(req.method==='GET'&&p==='/api/admin/ebay/publishing/status'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  return json(res,200,{...ebayOAuth.publishStatus(),publishingEnabled:false});
+ }
+ if(req.method==='GET'&&p==='/api/admin/ebay/publishing/setup'){
+  if(!admin(req))return problem(res,401,'Admin login required.');
+  if(!throttle(req,'ebay_publish_setup',12,15*60_000))return problem(res,429,'Too many publishing checks.');
+  if(!ebayOAuth.publishStatus().connected)return json(res,200,{connected:false,publishingEnabled:false,message:'Connect publishing preparation permission first.',policies:{},locations:[]});
+  const token=await ebayOAuth.getPublishingToken();
+  const headers={Authorization:'Bearer '+token,Accept:'application/json'};
+  const read=async(path,key)=>{
+   try{
+    const response=await fetch('https://api.ebay.com'+path,{headers,signal:AbortSignal.timeout(9000)});
+    if(!response.ok)return {available:false,status:response.status,items:[]};
+    const data=await response.json(),raw=Array.isArray(data[key])?data[key]:[];
+    return {available:true,status:200,items:raw.map(x=>({id:String(x.fulfillmentPolicyId||x.paymentPolicyId||x.returnPolicyId||x.merchantLocationKey||''),name:String(x.name||x.merchantLocationKey||'').slice(0,120)})).filter(x=>x.id)};
+   }catch{return {available:false,status:null,items:[]};}
+  };
+  const [fulfillment,payment,returns,locations]=await Promise.all([
+   read('/sell/account/v1/fulfillment_policy?marketplace_id=EBAY_US','fulfillmentPolicies'),
+   read('/sell/account/v1/payment_policy?marketplace_id=EBAY_US','paymentPolicies'),
+   read('/sell/account/v1/return_policy?marketplace_id=EBAY_US','returnPolicies'),
+   read('/sell/inventory/v1/location?limit=100','locations')
+  ]);
+  return json(res,200,{connected:true,publishingEnabled:false,policies:{fulfillment,payment,returns},locations,marketplace:'EBAY_US',message:'Read-only seller setup. No inventory or offers created.'});
+ }
  if(req.method==='GET'&&p==='/api/admin/ebay/status'){
   if(!admin(req))return problem(res,401,'Admin login required.');
   const oauth=ebayOAuth.status();
