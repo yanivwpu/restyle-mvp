@@ -11,6 +11,7 @@
   let html='<h3>AI eBay Listing Studio <span class="pilot-tag">NO PUBLISHING</span></h3><p>Prepare a factual title, description, category suggestion and item specifics. Samantha reviews every draft before future eBay publishing is enabled.</p>';
   if(draftGates.length)html+='<p class="admin-error" style="display:block">Complete before generating: '+esc(draftGates.join(' · '))+'</p>';
   else html+='<p class="save-notice">Agreement and submission checks passed. You can prepare a preliminary draft; final approval still requires warehouse inspection.</p>';
+  html+='<section id="listingPhotoManager" class="listing-photo-manager"><h4>Listing photos</h4><p class="detail-meta">Customer photos remain unchanged. Add warehouse photos and choose which images to use in the listing.</p><div id="listingPhotoGallery" class="listing-photo-gallery">Loading photos…</div><label>Upload warehouse photos (up to 5 at once)<input type="file" id="warehousePhotoInput" accept="image/jpeg,image/png,image/webp" multiple></label><div class="editor-actions"><button class="btn btn-outline" type="button" id="warehouseUploadButton">Upload photos</button><button class="btn btn-outline" type="button" id="listingPhotoSave">Save listing photo selection</button></div><p id="listingPhotoMessage" role="status" class="save-notice"></p></section>';
   html+='<form id="listingGenerate"><div class="editor-grid">'+field('Verified item type','itemType',facts.category||'')+field('Verified color','color',facts.color||'')+'</div><details class="listing-extra-facts"><summary>Additional item details (optional)</summary><div class="editor-grid">'+field('Verified size','size',facts.size||'')+field('Verified material','material',facts.material||'')+textarea('Measurements','measurements',facts.measurements||'',2)+textarea('Observed flaws or wear','flaws',facts.flaws||'',2)+textarea('Other verified details','facts',facts.facts||'',2)+'</div></details>';
   html+='</form>';
   if(d){
@@ -22,12 +23,73 @@
    html+='<label class="span-all">eBay category<div class="editor-grid" id="ebayCategoryLevels"><select id="ebayCategoryMain"><option value="">Choose category</option></select><select id="ebayCategorySub"><option value="">Choose subcategory</option></select></div><small id="ebayCategoryHint">Finding matching eBay categories…</small><input type="hidden" name="categorySuggestion" value="'+esc(d.category_hint||'')+'"><input type="hidden" name="categoryId" value="'+esc(d.category_id||'')+'"></label>';
    html+=textarea('Listing description','description',d.description,8);
    html+='</div><p class="detail-meta">Suggested item specifics: '+esc(Object.entries(d.aspects||{}).map(x=>x.join(': ')).join(' · ')||'None')+'</p><p class="detail-meta">To check: '+esc((d.checks||[]).join(' · '))+'</p>';
-   if(gates.length)html+='<p class="detail-meta">Final approval pending: '+esc(gates.join(' · '))+'</p>';if(!d.price_cents||!d.category_id)html+='<p class="detail-meta">Before approval: enter an asking price and confirm the correct eBay category ID. You can save now without them.</p>';
+   if(gates.length||!d.price_cents||!d.category_id){
+    const remaining=[...gates,...(!d.price_cents?['Save the asking price']:[]),...(!d.category_id?['Select and save the final eBay category']:[])];
+    html+='<p class="detail-meta"><strong>Before approval:</strong> '+esc(remaining.join(' · '))+'. Save warehouse changes in the section above, then reopen this item.</p>';
+   }else html+='<p class="save-notice">Warehouse and listing requirements are complete. Review the description and click Approve draft (internal only).</p>';
    html+='<div class="editor-actions"><button class="btn btn-outline" type="submit">Save draft</button><button class="btn btn-primary" type="button" id="listingApprove" '+(approved||gates.length||!d.price_cents||!d.category_id?'disabled':'')+'>'+(approved?'✓ Staff reviewed':'Approve draft (internal only)')+'</button></div>';
    html+='<p class="detail-meta">Save your work anytime. Category ID, asking price and warehouse verification are required only for approval. Nothing is published to eBay.</p></form>';
   }
   html+='<div class="listing-mapping-info"><strong>AI listing preparation</strong><p id="mappingResult" role="status">Checking the draft…</p><button class="btn btn-outline" id="mappingRegenerate" type="button">Regenerate AI listing</button></div>';  html+='<div id="listingFeedback" class="save-notice" role="status"></div>';
   div.innerHTML=html;target.insertAdjacentElement('afterend',div);
+  const photoGallery=div.querySelector('#listingPhotoGallery'),photoMessage=div.querySelector('#listingPhotoMessage'),photoBase='/api/admin/submissions/'+encodeURIComponent(id)+'/listing-photos';
+  let photoPool=null,chosenPhotos=[];
+  const photoRequest=async(action,body)=>{
+    const r=await fetch(photoBase+(action?'/'+action:''),{method:action?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(action?{body:JSON.stringify(body)}:{})});
+    const data=await r.json();if(!r.ok)throw Error(data.error||'Photo request failed');return data;
+  };
+  function showPhotoGallery(){
+    if(!photoPool)return;
+    photoGallery.replaceChildren();
+    const all=[...(photoPool.customer||[]),...(photoPool.warehouse||[])];
+    const list=chosenPhotos.filter(p=>all.some(x=>x.id===p));
+    const galleryList=document.createElement('div');galleryList.className='listing-photo-grid';
+    all.forEach(photo=>{
+      const card=document.createElement('div');card.className='listing-photo-card';
+      const img=document.createElement('img');img.alt=photo.source==='warehouse'?'Warehouse photo':'Customer photo';
+      img.src='/api/admin/'+(photo.source==='warehouse'?'warehouse-photos/':'photos/')+encodeURIComponent(photo.id);
+      const selection=document.createElement('label');const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=list.includes(photo.id);
+      checkbox.addEventListener('change',()=>{if(checkbox.checked){if(chosenPhotos.length>=12){checkbox.checked=false;photoMessage.textContent='Select no more than 12 photos.';return;}chosenPhotos.push(photo.id);}else chosenPhotos=chosenPhotos.filter(x=>x!==photo.id);showPhotoGallery();});
+      selection.append(checkbox,document.createTextNode(' '+(photo.source==='warehouse'?'Warehouse':'Customer')+(list.includes(photo.id)?' · '+(list.indexOf(photo.id)+1):'')));
+      const reorder=document.createElement('div');reorder.className='listing-photo-order';
+      for(const [label,offset] of [['↑',-1],['↓',1]]){
+        const btn=document.createElement('button');btn.type='button';btn.className='small-button';btn.textContent=label;btn.title='Change image order';
+        const position=chosenPhotos.indexOf(photo.id);btn.disabled=position<0||position+offset<0||position+offset>=chosenPhotos.length;
+        btn.addEventListener('click',()=>{const i=chosenPhotos.indexOf(photo.id),j=i+offset;[chosenPhotos[i],chosenPhotos[j]]=[chosenPhotos[j],chosenPhotos[i]];showPhotoGallery();});
+        reorder.append(btn);
+      }
+      card.append(img,selection,reorder);galleryList.append(card);
+    });photoGallery.append(galleryList);
+    const tip=document.createElement('p');tip.className='detail-meta';tip.textContent=chosenPhotos.length+' selected · Image #1 is the main listing photo. Changes apply to future AI generation after saving.';
+    photoGallery.append(tip);
+  }
+  async function loadListingPhotos(){
+    try{photoPool=await photoRequest();chosenPhotos=(photoPool.effective||[]).map(p=>p.id);showPhotoGallery();}
+    catch(err){photoGallery.textContent='Cannot load listing photos: '+err.message;}
+  }
+  div.querySelector('#warehouseUploadButton').addEventListener('click',async()=>{
+    const files=[...(div.querySelector('#warehousePhotoInput').files||[])];
+    if(!files.length||files.length>5){photoMessage.textContent='Select 1–5 photos.';return;}
+    if(files.some(x=>x.size>5*1024*1024||!['image/jpeg','image/png','image/webp'].includes(x.type))){photoMessage.textContent='Use JPEG, PNG or WebP, each 5MB or less.';return;}
+    const btn=div.querySelector('#warehouseUploadButton');btn.disabled=true;photoMessage.textContent='Uploading warehouse photos…';
+    try{
+      const photos=await Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({data:reader.result});reader.onerror=()=>reject(new Error('Cannot read image'));reader.readAsDataURL(file);})));
+      const before=new Set([...(photoPool?.warehouse||[])].map(p=>p.id));
+      photoPool=await photoRequest('upload',{photos});
+      // Newly uploaded photos are selected by default; customer originals remain intact.
+      chosenPhotos.push(...photoPool.warehouse.filter(p=>!before.has(p.id)).map(p=>p.id));
+      if(chosenPhotos.length>12)chosenPhotos=chosenPhotos.slice(0,12);
+      showPhotoGallery();div.querySelector('#warehousePhotoInput').value='';
+      photoMessage.textContent='Warehouse photos uploaded. Choose/order your listing photos, then save selection.';
+    }catch(err){photoMessage.textContent=err.message;}finally{btn.disabled=false;}
+  });
+  div.querySelector('#listingPhotoSave').addEventListener('click',async()=>{
+    if(chosenPhotos.length===0){photoMessage.textContent='Select at least one listing photo.';return;}
+    const btn=div.querySelector('#listingPhotoSave');btn.disabled=true;
+    try{photoPool=await photoRequest('select',{ids:chosenPhotos});chosenPhotos=photoPool.effective.map(p=>p.id);showPhotoGallery();photoMessage.textContent='Listing photos saved. Customer uploads remain unchanged.';}
+    catch(err){photoMessage.textContent=err.message;}finally{btn.disabled=false;}
+  });
+  loadListingPhotos();
   const feedback=div.querySelector('#listingFeedback');
   const mappingNode=div.querySelector('#mappingResult');
   const aiUrl='/api/admin/submissions/'+encodeURIComponent(id)+'/ebay-ai';
