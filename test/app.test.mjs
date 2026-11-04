@@ -321,10 +321,11 @@ test('Approved listings are private and return a non-publishing photo preview',a
  db.prepare("UPDATE submissions SET status='RECEIVED', received_verified=1,sku='CH-TEST-01',bin_location='B2' WHERE id=?").run(id);
  db.prepare("INSERT OR REPLACE INTO ebay_listing_drafts(submission_id,status,source,title,description,category_hint,category_id,aspects_json,checks_json,verified_facts_json,price_cents,reviewed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id,'REVIEWED','ebay_ai','Test ear cuff new without tags','White with gold accent (appearance only)','Jewelry › Earrings','50647','{}','[]','{}',4500,now,now,now);
  db.close();
- const saveColor=await request('/api/admin/submissions/'+id+'/listing/save',{method:'POST',body:JSON.stringify({title:'Test ear cuff new without tags',description:'White with gold accent (appearance only)',categorySuggestion:'Jewelry › Earrings',categoryId:'50647',price:'45',verifiedFacts:{itemType:'Ear Cuff',color:'White and Gold',size:'',material:''}})});
- assert.equal(saveColor.r.status,200,JSON.stringify(saveColor.data));
- const reviewColor=await request('/api/admin/submissions/'+id+'/listing/approve',{method:'POST',body:JSON.stringify({title:'Test ear cuff new without tags',description:'White with gold accent (appearance only)',categorySuggestion:'Jewelry › Earrings',categoryId:'50647',price:'45',verifiedFacts:{itemType:'Ear Cuff',color:'White and Gold',size:'',material:''}})});
- assert.equal(reviewColor.r.status,200,JSON.stringify(reviewColor.data));
+ // This fixture starts after staff review; populate the values that a real saved draft stores.
+ const savedDb=new DatabaseSync(path.join(dir,'restyle.sqlite'));
+ savedDb.prepare('UPDATE ebay_listing_drafts SET verified_facts_json=?,aspects_json=? WHERE submission_id=?')
+  .run(JSON.stringify({category:'Ear Cuff',color:'White and Gold'}),JSON.stringify({'Item type':'Ear Cuff',Color:'White and Gold'}),id);
+ savedDb.close();
  const queue=await request('/api/admin/approved-listings');
  assert.equal(queue.r.status,200,JSON.stringify(queue.data));
  assert.equal(queue.data.publishingEnabled,false);
