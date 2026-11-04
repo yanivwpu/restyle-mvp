@@ -289,3 +289,31 @@ test('SHUKCHIC payout ledger enforces net-proceeds tiers, disputes and 30-day ho
  assert.equal(loaded.r.status,200);assert.equal(loaded.data.settlement.split_percent,80);
  assert.equal(loaded.data.item.status,'SOLD');
 });
+
+
+test('Approved listings are private and return a non-publishing photo preview',async()=>{
+ const denied=await fetch(base+'/api/admin/approved-listings');
+ assert.equal(denied.status,401);
+ const db=new DatabaseSync(path.join(dir,'restyle.sqlite'));
+ const id=submissionId;
+ assert.match(id,/^RS-[A-F0-9]{10}$/);
+ const now=new Date().toISOString();
+ db.prepare("UPDATE submissions SET status='RECEIVED', received_verified=1,sku='CH-TEST-01',bin_location='B2' WHERE id=?").run(id);
+ db.prepare("INSERT OR REPLACE INTO ebay_listing_drafts(submission_id,status,source,title,description,category_hint,category_id,aspects_json,checks_json,verified_facts_json,price_cents,reviewed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id,'REVIEWED','ebay_ai','Test ear cuff new without tags','White with gold accent (appearance only)','Jewelry › Earrings','50647','{}','[]','{}',4500,now,now,now);
+ db.close();
+ const queue=await request('/api/admin/approved-listings');
+ assert.equal(queue.r.status,200,JSON.stringify(queue.data));
+ assert.equal(queue.data.publishingEnabled,false);
+ assert(queue.data.items.some(x=>x.id===id));
+ const response=await request('/api/admin/approved-listings/'+id+'/preview');
+ assert.equal(response.r.status,200,JSON.stringify(response.data));
+ assert.equal(response.data.previewOnly,true);
+ assert.equal(response.data.publishingEnabled,false);
+ assert.equal(response.data.title,'Test ear cuff new without tags');
+ assert.equal(response.data.price.amount,45);
+ assert.equal(response.data.photos.length>0,true);
+ assert.equal(response.data.photos[0].url.startsWith('/api/admin/photos/'),true);
+ assert.equal(response.data.checks.some(x=>x.includes('white-gold')),false,'Appearance description is not white-gold metal claim');
+ const notFound=await request('/api/admin/approved-listings/RS-0000000000/preview');
+ assert.equal(notFound.r.status,404);
+});
