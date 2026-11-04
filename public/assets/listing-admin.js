@@ -75,7 +75,7 @@
    feedback.textContent='Processing…';
    const result=await fetch(endpoint(id)+'/'+op,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
    const data=await result.json();if(!result.ok)throw Error(data.error||'Unable to complete listing action.');
-   if(op==='save'){d=data.draft||d;feedback.textContent='Draft saved successfully. You can continue editing later.';feedback.setAttribute('role','status');return;}
+   if(op==='save'){feedback.textContent='Draft saved successfully. You can continue editing later.';feedback.setAttribute('role','status');return;}
    render(id,data);const node=document.querySelector('#listingFeedback');if(node)node.textContent='Draft approved internally. Nothing published to eBay.';
   }
   const edit=div.querySelector('#listingEdit');
