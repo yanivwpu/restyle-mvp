@@ -58,7 +58,22 @@
         btn.addEventListener('click',()=>{const i=chosenPhotos.indexOf(photo.id),j=i+offset;[chosenPhotos[i],chosenPhotos[j]]=[chosenPhotos[j],chosenPhotos[i]];showPhotoGallery();});
         reorder.append(btn);
       }
-      card.append(img,selection,reorder);galleryList.append(card);
+      if(photo.source==='warehouse'){
+        const del=document.createElement('button');del.type='button';del.className='small-button listing-photo-delete';del.textContent='Delete photo';del.title='Permanently delete this warehouse photo';
+        del.addEventListener('click',async()=>{
+          if(!confirm('Permanently delete this warehouse photo? This cannot be undone. Customer photos will not be affected.'))return;
+          del.disabled=true;photoMessage.textContent='Deleting warehouse photo…';
+          try{
+            const response=await fetch('/api/admin/submissions/'+encodeURIComponent(id)+'/warehouse-photos/'+encodeURIComponent(photo.id),{method:'DELETE',credentials:'same-origin'});
+            const data=await response.json();if(!response.ok)throw Error(data.error||'Cannot delete warehouse photo');
+            photoPool=data;chosenPhotos=chosenPhotos.filter(x=>x!==photo.id);
+            if(chosenPhotos.length===0)chosenPhotos=data.effective.map(x=>x.id);
+            showPhotoGallery();photoMessage.textContent='Warehouse photo deleted. Customer photos preserved.';
+          }catch(err){photoMessage.textContent=err.message;del.disabled=false;}
+        });
+        card.append(img,selection,reorder,del);
+      }else card.append(img,selection,reorder);
+      galleryList.append(card);
     });photoGallery.append(galleryList);
     const tip=document.createElement('p');tip.className='detail-meta';tip.textContent=chosenPhotos.length+' selected · Image #1 is the main listing photo. Changes apply to future AI generation after saving.';
     photoGallery.append(tip);
