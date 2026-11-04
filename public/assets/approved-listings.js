@@ -34,11 +34,32 @@
    const specifics=Object.entries(d.itemSpecifics||{}).filter(([key,value])=>value!=null&&String(value).trim()&&['Color','Item type','Size','Material','Measurements','Known wear / flaws'].includes(key));
    const specificsHtml=specifics.length?'<div class="approved-specifics"><h4>Item details</h4><dl>'+specifics.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl></div>':'';
    // Keep all advisory checks on the server for future API validation, not as a to-do list in Samantha's preview.
-   preview.innerHTML='<div class="approved-preview-header"><h3>Listing preview</h3><button class="small-button" id="closeApprovedPreview" type="button" aria-label="Close listing preview">Close</button></div><div class="approved-preview-content"><div><div class="approved-image-wrap">'+imgHtml+'</div><div class="approved-image-strip">'+strip+'</div></div><div><h3>'+esc(d.title)+'</h3><strong class="approved-preview-price">'+esc(currency(d.price.amount))+'</strong><p class="detail-meta">Condition: '+esc(d.condition)+'</p><p class="detail-meta">Category: '+esc(d.category.label||'Unconfirmed')+'</p><p class="detail-meta">SKU: '+esc(d.sku)+'</p>'+specificsHtml+'<h4>Description</h4><p class="approved-preview-description">'+esc(d.description)+'</p></div></div><div class="approved-preview-buttons"><button type="button" class="btn btn-outline" id="approvedEdit">Edit listing</button><button class="btn btn-primary" type="button" id="approvedPublish">Publish to eBay</button></div><p class="detail-meta" id="approvedPublishStatus" role="status"></p>';
-   $('#approvedPublish').addEventListener('click',()=>{
-     // No backend publication route exists yet: never claim a listing is live.
-     const message=$('#approvedPublishStatus');
-     message.textContent='eBay publishing has not been connected yet. The listing was NOT sent to eBay. SHUKCHIC will require your final confirmation once publishing is available.';
+   preview.innerHTML='<div class="approved-preview-header"><h3>Listing preview</h3><button class="small-button" id="closeApprovedPreview" type="button" aria-label="Close listing preview">Close</button></div><div class="approved-preview-content"><div><div class="approved-image-wrap">'+imgHtml+'</div><div class="approved-image-strip">'+strip+'</div></div><div><h3>'+esc(d.title)+'</h3><strong class="approved-preview-price">'+esc(currency(d.price.amount))+'</strong><p class="detail-meta">Condition: '+esc(d.condition)+'</p><p class="detail-meta">Category: '+esc(d.category.label||'Unconfirmed')+'</p><p class="detail-meta">SKU: '+esc(d.sku)+'</p>'+specificsHtml+'<h4>Description</h4><p class="approved-preview-description">'+esc(d.description)+'</p></div></div><div class="approved-preview-buttons"><button type="button" class="btn btn-outline" id="approvedEdit">Edit listing</button><button class="btn btn-outline" type="button" id="approvedConnect">Connect eBay publishing</button><button class="btn btn-primary" type="button" id="approvedPublish" disabled>Publish to eBay</button></div><p class="detail-meta" id="approvedPublishStatus" role="status">Live publishing remains off. Connect eBay publishing access to verify the seller setup.</p>';
+   const connectionButton=$('#approvedConnect'),publishMessage=$('#approvedPublishStatus');
+   let publishingConnected=false;
+   try{
+    const status=await fetchData('/api/admin/ebay/publishing/status');
+    publishingConnected=Boolean(status.connected);
+    connectionButton.textContent=publishingConnected?'Check eBay seller setup':'Connect eBay publishing';
+    publishMessage.textContent=publishingConnected?'Publishing authorization connected. Check seller settings before eBay offer creation. No listing has been published.':'Connect publishing authorization to prepare an unpublished eBay offer. Nothing will be published during connection.';
+   }catch(err){publishMessage.textContent='eBay publishing status could not be checked: '+err.message;}
+   connectionButton.addEventListener('click',async()=>{
+    connectionButton.disabled=true;
+    publishMessage.textContent=publishingConnected?'Checking eBay seller policies and inventory locations…':'Opening eBay publishing authorization…';
+    try{
+     if(!publishingConnected){
+      const response=await fetch('/api/admin/ebay/oauth/publishing-start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+      const result=await response.json();
+      if(!response.ok)throw Error(result.error||'Unable to start eBay authorization.');
+      if(!result.authorizationUrl||!result.authorizationUrl.startsWith('https://auth.ebay.com/'))throw Error('Invalid eBay authorization destination.');
+      window.location.assign(result.authorizationUrl);
+     }else{
+      const data=await fetchData('/api/admin/ebay/publishing/setup');
+      const types=[['shipping',data.policies?.fulfillment],['payment',data.policies?.payment],['returns',data.policies?.returns],['inventory locations',data.locations]];
+      publishMessage.textContent=types.map(([name,value])=>name+': '+(value?.available?value.items.length+' available':'not accessible')).join(' · ')+'. All checks read-only; no listing created.';
+     }
+    }catch(err){publishMessage.textContent='eBay setup: '+err.message;}
+    finally{connectionButton.disabled=false;}
    });
    $('#closeApprovedPreview').addEventListener('click',()=>{preview.hidden=true;});
    $('#approvedEdit').addEventListener('click',()=>{
