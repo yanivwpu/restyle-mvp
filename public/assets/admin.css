@@ -156,3 +156,9 @@
 .listing-photo-card label{display:flex;gap:4px;align-items:center;font-size:12px}
 .listing-photo-order{display:flex;gap:6px}
 .listing-photo-order button{padding:3px 9px}
+
+.listing-photo-card{position:relative}
+.listing-photo-card .listing-photo-delete{position:absolute;top:10px;right:10px;width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #e8d9d2;border-radius:8px;background:rgba(255,255,255,.96);color:#8d4b42;cursor:pointer;box-shadow:0 1px 3px #00000012}
+.listing-photo-card .listing-photo-delete:hover{background:#fff0ee;color:#a52c25;border-color:#e5aca5}
+.listing-photo-card .listing-photo-delete:focus-visible{outline:2px solid #a52c25;outline-offset:2px}
+.listing-photo-card .listing-photo-delete:disabled{opacity:.5;cursor:wait}

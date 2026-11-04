@@ -59,7 +59,7 @@
         reorder.append(btn);
       }
       if(photo.source==='warehouse'){
-        const del=document.createElement('button');del.type='button';del.className='small-button listing-photo-delete';del.textContent='Delete photo';del.title='Permanently delete this warehouse photo';
+        const del=document.createElement('button');del.type='button';del.className='listing-photo-delete';del.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7"/></svg>';del.setAttribute('aria-label','Delete warehouse photo');del.title='Delete warehouse photo';
         del.addEventListener('click',async()=>{
           if(!confirm('Permanently delete this warehouse photo? This cannot be undone. Customer photos will not be affected.'))return;
           del.disabled=true;photoMessage.textContent='Deleting warehouse photo…';
