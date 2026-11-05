@@ -11,6 +11,7 @@ import { sampleOrderPreview, examineEbayOrder } from './ebay-reconciliation.mjs'
 import { createEbayDeletionListener } from './ebay-deletion.mjs';
 import { createEbayOAuth } from './ebay-oauth.mjs';
 import { createEbayMapping } from './ebay-ai-mapping.mjs';
+import { evaluateListingForBatch } from './ebay-batch-readiness.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -394,6 +395,23 @@ async function handle(req,res){
    return json(res,201,{ok:true,id,emailStatus:recorded.email_status});
  }
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
+ // Batch review is read-only and never sends data to eBay. Individual failures do not affect other items.
+ if(req.method==='POST'&&p==='/api/admin/ebay/batch/preflight'){
+  if(!throttle(req,'ebay_batch_preflight',30,15*60_000))return problem(res,429,'Too many batch checks.');
+  const body=await bodyJson(req,15_000);
+  const ids=body?.ids;
+  if(!Array.isArray(ids)||ids.length<1||ids.length>25||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!/^RS-[A-F0-9]{10}$/.test(id)))return problem(res,400,'Select 1 to 25 unique listing references.');
+  const rows=ids.map(id=>{
+   const item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
+   if(!item)return {id,localReady:false,blockers:['Item not found'],ebayOfferPrepared:false,livePublishEnabled:false};
+   const details=listingDrafts.inspect(item);
+   const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+   return evaluateListingForBatch({item,draft:details.draft,gates:details.gates,photos:availablePhotos(id).effective,duplicateSku:duplicates});
+  });
+  return json(res,200,{items:rows,total:rows.length,localReady:rows.filter(x=>x.localReady).length,
+   next:'Complete seller policy, category-specific condition/aspects, eBay image transfer and offer creation validation before any publishing.',
+   publishingEnabled:false,offersCreated:0,marketplace:'EBAY_US'});
+ }
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
   const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
