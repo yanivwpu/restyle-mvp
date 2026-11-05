@@ -237,3 +237,15 @@
 .approved-parcel-row{display:grid;grid-template-columns:minmax(150px,2fr) repeat(4,minmax(78px,1fr));gap:10px;align-items:end;border-top:1px solid #e9ddd1;padding:10px 0}
 .approved-offer-form .approved-section-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:9px}
 @media(max-width:680px){.approved-parcel-row{grid-template-columns:repeat(2,minmax(0,1fr))}.approved-parcel-row strong{grid-column:1/-1}}
+
+/* Make bulk selection cards readable and display validation reasons next to the controls. */
+.approved-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr))}
+.approved-batch-row{grid-template-columns:22px minmax(0,1fr);align-items:start}
+.approved-batch-row .approved-item{min-height:105px;min-width:0}
+.approved-batch-row .approved-item-copy{flex:1;min-width:150px}
+.approved-batch-row .approved-item-copy strong{overflow-wrap:break-word;word-break:normal}
+.approved-batch-row .approved-status{flex-shrink:0;max-width:120px}
+.approved-preflight-issues{margin:10px 0 0;padding-left:20px}
+.approved-preflight-issues li{margin:5px 0;line-height:1.5}
+#approvedBatchResults{max-width:100%;overflow-wrap:anywhere}
+@media(max-width:580px){.approved-batch-row .approved-item{flex-wrap:wrap}.approved-batch-row .approved-status{max-width:none}}

@@ -21,6 +21,7 @@
   batchSelected.clear();
   for(const item of batchItems.filter(x=>x.review_status==='REVIEWED'&&x.ebay_offer_state!=='LIVE'&&x.ebay_offer_state!=='UNKNOWN').slice(0,25))batchSelected.add(item.id);
   updateBatchControls();
+  batchResult.textContent=batchSelected.size+' reviewed listings selected. Run the eBay validation check.';
  });
  const clearBatch=$('#approvedBatchClear');
  if(clearBatch)clearBatch.addEventListener('click',()=>{batchSelected.clear();updateBatchControls();batchResult.textContent='Selection cleared. No changes made to eBay.';});
@@ -32,10 +33,22 @@
    const data=await response.json();
    if(!response.ok)throw Error(data.error||'Batch check failed.');
    const failed=(data.items||[]).filter(x=>!x.localReady);
-   batchResult.textContent=data.localReady+' of '+data.total+' passed local review checks. '+(failed.length?failed.map(x=>x.sku||x.id).slice(0,5).join(', ')+' need edits. ':'')+'No eBay offers created or published.';
+   const summary=data.localReady+' of '+data.total+' passed local review checks. No eBay offers created or published.';
+   batchResult.replaceChildren();
+   const heading=document.createElement('strong');heading.textContent=summary;batchResult.append(heading);
+   if(failed.length){
+    const reasons=document.createElement('ul');reasons.className='approved-preflight-issues';
+    for(const item of failed){
+     const line=document.createElement('li');
+     const sku=document.createElement('strong');sku.textContent=(item.sku||item.id)+': ';
+     line.append(sku,document.createTextNode((item.blockers||[]).join('; ')||'Needs staff review'));
+     reasons.append(line);
+    }
+    batchResult.append(reasons);
+   }
    for(const item of data.items||[]){
     const label=grid.querySelector('[data-batch-result="'+item.id+'"]');
-    if(label)label.textContent=item.localReady?'Local checks passed (eBay validation still required)':item.blockers.join('; ');
+    if(label)label.textContent=item.localReady?'Local checks passed (eBay validation still required)':'Needs edits — see reasons above';
    }
   }catch(err){batchResult.textContent='Could not check batch: '+err.message;}
   finally{updateBatchControls();}
@@ -156,6 +169,7 @@
       if(checkbox.checked&&batchSelected.size>=25){checkbox.checked=false;batchResult.textContent='Select up to 25 items at a time.';return;}
       if(checkbox.checked)batchSelected.add(item.id);else batchSelected.delete(item.id);
       updateBatchControls();
+      batchResult.textContent=batchSelected.size+' selected. Click Check selected for eBay to validate the current selection.';
      });
      const button=document.createElement('button');button.type='button';button.className='approved-item';
      const img=item.cover?'<img loading="lazy" src="'+esc(imageUrl(item.cover))+'" alt="">':'<span class="approved-no-photo">No photo</span>';
