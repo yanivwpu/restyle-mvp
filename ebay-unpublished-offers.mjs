@@ -69,6 +69,9 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  }
  async function prepare({item,draft,photos,duplicates,issues=[],settings}){
   if(!enabled())throw fail(409,'Unpublished eBay offer preparation is disabled until the first controlled pilot is approved.');
+  const pilotSkus=slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim()).filter(Boolean);
+  if(!pilotSkus.includes(item.sku)&&!pilotSkus.includes('*'))
+   throw fail(409,'This SKU is not authorized for the controlled unpublished-offer preparation pilot.');
   const checked=evaluateListingForBatch({item,draft,gates:issues,photos,duplicateSku:duplicates});
   if(!checked.localReady)throw fail(409,'Listing not locally ready: '+checked.blockers.join('; '));
   if(get(item.id))throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
