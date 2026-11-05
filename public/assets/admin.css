@@ -227,3 +227,13 @@
 .approved-batch-row input[type=checkbox]{width:17px;height:17px;accent-color:#a76f49;cursor:pointer}
 .approved-batch-row .approved-item{width:100%}
 .approved-batch-feedback{grid-column:2;color:#69584c;font-size:11px;overflow-wrap:anywhere}
+
+/* Batch offer preparation details, shown only when staff requests eBay creation. */
+.approved-offer-form{background:#fffaf6;border:1px solid #ead9c8;border-radius:12px;padding:15px;margin:12px 0}
+.approved-offer-form h3{margin:0 0 7px}
+.approved-offer-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0}
+.approved-offer-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;min-width:0}
+.approved-offer-form select,.approved-offer-form input{padding:8px;border:1px solid #d9c6b5;border-radius:8px;background:white;color:#29201b;min-width:0;width:100%}
+.approved-parcel-row{display:grid;grid-template-columns:minmax(150px,2fr) repeat(4,minmax(78px,1fr));gap:10px;align-items:end;border-top:1px solid #e9ddd1;padding:10px 0}
+.approved-offer-form .approved-section-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:9px}
+@media(max-width:680px){.approved-parcel-row{grid-template-columns:repeat(2,minmax(0,1fr))}.approved-parcel-row strong{grid-column:1/-1}}
