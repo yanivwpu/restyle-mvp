@@ -27,7 +27,7 @@ function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=
   throw Error('Unexpected eBay route '+url);
  };
  const service=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=>'test-token-1234567890'},fetcher,
-  loadPhoto:async()=>({bytes:Buffer.from([255,216,255]),mime:'image/jpeg'}),enabled:()=>enabled,publishEnabled:()=>publishEnabled});
+  loadPhoto:async()=>({bytes:Buffer.from([255,216,255]),mime:'image/jpeg'}),enabled:()=>enabled,publishEnabled:()=>publishEnabled,prepareAllowed:()=>true});
  return {db,calls,service};
 }
 test('offer preparation stays disabled by default and causes no eBay writes',async()=>{
