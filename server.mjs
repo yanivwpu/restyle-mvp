@@ -421,6 +421,21 @@ async function handle(req,res){
   audit(id,'EBAY UNPUBLISHED OFFER PREPARED: '+prepared.offerId);
   return json(res,200,prepared);
  }
+ // Staff-confirmed live publishing; separate Railway enablement and explicit SKU allowlist.
+ const liveRoute=p.match(/^\/api\/admin\/ebay\/offers\/publish\/(RS-[A-F0-9]{10})$/);
+ if(req.method==='POST'&&liveRoute){
+  if(!throttle(req,'ebay_live_publish',25,15*60_000))return problem(res,429,'Live publishing rate limit reached.');
+  const body=await readJson(req,3000);
+  const id=liveRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
+  if(!item)return problem(res,404,'Submission not found.');
+  const inspected=listingDrafts.inspect(item);
+  const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+  const published=await unpublishedOffers.publish({item,draft:inspected.draft,photos:availablePhotos(id).effective,
+   issues:inspected.gates,duplicates,confirmation:body?.confirmation});
+  db.prepare("UPDATE submissions SET status='LISTED',updated_at=? WHERE id=? AND status IN ('RECEIVED','READY_TO_LIST')").run(now(),id);
+  audit(id,'EBAY LISTING PUBLISHED (explicit staff approval): '+published.listingId);
+  return json(res,200,published);
+ }
  // Batch review is read-only and never sends data to eBay. Individual failures do not affect other items.
  if(req.method==='POST'&&p==='/api/admin/ebay/batch/preflight'){
   if(!throttle(req,'ebay_batch_preflight',30,15*60_000))return problem(res,429,'Too many batch checks.');
