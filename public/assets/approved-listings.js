@@ -25,7 +25,7 @@
  });
  const clearBatch=$('#approvedBatchClear');
  if(clearBatch)clearBatch.addEventListener('click',()=>{batchSelected.clear();updateBatchControls();batchResult.textContent='Selection cleared. No changes made to eBay.';});
- batchCheck.addEventListener('click',async()=>{
+ async function runBatchPreflight(){
   if(batchSelected.size<1||batchSelected.size>25)return;
   batchCheck.disabled=true;batchResult.textContent='Checking selected listing drafts…';
   try{
@@ -50,9 +50,11 @@
     const label=grid.querySelector('[data-batch-result="'+item.id+'"]');
     if(label)label.textContent=item.localReady?'Local checks passed (eBay validation still required)':'Needs edits — see reasons above';
    }
-  }catch(err){batchResult.textContent='Could not check batch: '+err.message;}
+   return data;
+  }catch(err){batchResult.textContent='Could not check batch: '+err.message;throw err;}
   finally{updateBatchControls();}
- });
+ }
+ batchCheck.addEventListener('click',()=>{runBatchPreflight().catch(()=>{});});
 
 
  const batchPublish=$('#approvedBatchPublish');
@@ -64,16 +66,48 @@
   for(const x of items||[]){const option=document.createElement('option');option.value=x.id;option.textContent=(x.name||x.id)+' ('+x.id+')';element.append(option);}
  }
  offerSetup.addEventListener('click',async()=>{
-  offerProgress.textContent='Reading eBay policies and locations…';
-  offerForm.hidden=false;
+  if(!batchSelected.size)return;
+  offerSetup.disabled=true;
+  offerForm.hidden=true;
   try{
+   const statuses=await Promise.all([...batchSelected].map(id=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id))));
+   if(statuses.some(x=>x.state==='UNKNOWN'||x.state==='LIVE'||x.state==='PREPARING'||x.state==='PUBLISHING'))
+    throw Error('Selected item has an existing or uncertain eBay state. Review its status before continuing.');
+   if(statuses.every(x=>x.state==='PREPARED')){
+    offerSetup.disabled=false;
+    batchPublish.click();
+    return;
+   }
+   if(statuses.some(x=>x.state==='PREPARED'))
+    throw Error('This selection mixes prepared and new offers. Select only one group at a time.');
+   const validation=await runBatchPreflight();
+   if(!validation||validation.localReady!==validation.total){
+    batchResult.textContent+=' Please edit the flagged listing before publishing.';
+    return;
+   }
+   offerProgress.textContent='Loading your saved eBay settings…';
    const data=await fetchData('/api/admin/ebay/publishing/setup');
    if(!data.connected)throw Error('Reconnect eBay publishing permission first.');
-   const sources=[['#approvedOfferPayment',data.policies?.payment,'Select payment'],['#approvedOfferShipping',data.policies?.fulfillment,'Select shipping'],['#approvedOfferReturns',data.policies?.returns,'Select returns'],['#approvedOfferLocation',data.locations,'Select eBay location']];
-   for(const [id,value,label] of sources){
+   const sources=[
+    ['#approvedOfferPayment',data.policies?.payment,'Select payment','SHUKCHIC - Immediate Payment'],
+    ['#approvedOfferShipping',data.policies?.fulfillment,'Select shipping','SHUKCHIC - Standard Domestic Shipping'],
+    ['#approvedOfferReturns',data.policies?.returns,'Select returns','SHUKCHIC - 30 Day Buyer Paid Returns'],
+    ['#approvedOfferLocation',data.locations,'Select eBay location','US_34778']
+   ];
+   const ambiguous=[];
+   for(const [id,value,label,preferred] of sources){
     if(!value?.available)throw Error('eBay '+label.toLowerCase()+' details not available.');
     fillOfferOptions($(id),value.items,label);
+    const matches=(value.items||[]).filter(x=>id==='#approvedOfferLocation'?
+      x.id===preferred||x.name===preferred:x.name===preferred);
+    if(matches.length===1)$(id).value=matches[0].id;
+    else if((value.items||[]).length===1)$(id).value=value.items[0].id;
+    else ambiguous.push(label.toLowerCase());
    }
+   $('#approvedOfferAdvanced').open=ambiguous.length>0;
+   $('#approvedOfferDefaultsSummary').textContent=ambiguous.length?
+     'Select '+ambiguous.join(', ')+' in the settings below. SHUKCHIC will reuse your choices for this batch.':
+     'Using SHUKCHIC’s existing eBay payment, shipping, return and warehouse settings.';
    offerRows.replaceChildren();
    for(const id of batchSelected){
     const item=batchItems.find(x=>x.id===id);
@@ -87,9 +121,13 @@
     }
     offerRows.append(row);
    }
-   offerProgress.textContent='No eBay offer has been created. Confirm the actual packed dimensions before preparing.';
-  }catch(err){offerProgress.textContent='Cannot prepare eBay offers: '+err.message;offerConfirm.disabled=true;return;}
-  offerConfirm.disabled=false;
+   $('#approvedOfferFormTitle').textContent=batchSelected.size===1?'Publish this listing':'Publish '+batchSelected.size+' listings';
+   $('#approvedOfferIntro').textContent='Only the actual packed weight and size are needed. SHUKCHIC will prepare each eBay offer automatically. Live publishing stays gated until the controlled pilot is approved.';
+   offerProgress.textContent='No eBay offer has been created. Enter the package measurements to continue.';
+   offerForm.hidden=false;
+   offerConfirm.disabled=false;
+  }catch(err){batchResult.textContent='Cannot continue to eBay: '+err.message;offerConfirm.disabled=true;}
+  finally{offerSetup.disabled=false;}
  });
  $('#approvedOfferCancel').addEventListener('click',()=>{offerForm.hidden=true;offerProgress.textContent='Preparation cancelled. No listings were created.';});
  offerConfirm.addEventListener('click',async()=>{
