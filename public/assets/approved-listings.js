@@ -21,7 +21,7 @@
   batchSelected.clear();
   for(const item of batchItems.filter(x=>x.review_status==='REVIEWED'&&x.ebay_offer_state!=='LIVE'&&x.ebay_offer_state!=='UNKNOWN').slice(0,25))batchSelected.add(item.id);
   updateBatchControls();
-  batchResult.textContent=batchSelected.size+' reviewed listings selected. Run the eBay validation check.';
+  batchResult.textContent=batchSelected.size+' reviewed listings selected. Choose Publish selected to eBay when ready.';
  });
  const clearBatch=$('#approvedBatchClear');
  if(clearBatch)clearBatch.addEventListener('click',()=>{batchSelected.clear();updateBatchControls();batchResult.textContent='Selection cleared. No changes made to eBay.';});
@@ -138,7 +138,7 @@
   const selected=[...offerRows.querySelectorAll('[data-offer-item]')];
   const parcels=selected.map(row=>({id:row.dataset.offerItem,parcel:Object.fromEntries([...row.querySelectorAll('[data-parcel-field]')].map(input=>[input.dataset.parcelField,Number(input.value)]))}));
   if(parcels.some(x=>Object.values(x.parcel).some(n=>!Number.isFinite(n)||n<=0))){offerProgress.textContent='Enter the actual weight and dimensions for every selected item.';return;}
-  if(!window.confirm('Prepare '+parcels.length+' UNPUBLISHED eBay offers? Inventory records and photos will be sent to eBay, but no listing will go live.'))return;
+  if(!window.confirm('Send '+parcels.length+' reviewed items to eBay? SHUKCHIC will create unpublished offers. This pilot does not enable live sales until a separate final confirmation is available.'))return;
   offerConfirm.disabled=true;offerSetup.disabled=true;
   let completed=0;
   for(const entry of parcels){
@@ -155,8 +155,18 @@
     offerSetup.disabled=false;return;
    }
   }
-  offerProgress.textContent=completed+' unpublished offers prepared successfully. Nothing has been published.';
+  offerProgress.textContent=completed+' unpublished offers prepared successfully. Checking whether live publishing is enabled…';
   offerSetup.disabled=false;
+  await load();
+  try{
+   const states=await Promise.all(parcels.map(x=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(x.id))));
+   if(states.every(x=>x.livePublishAvailable)){
+    offerProgress.textContent='Unpublished offers are ready for Samantha’s final publishing confirmation.';
+    batchPublish.click();
+   }else{
+    offerProgress.textContent=completed+' unpublished offers saved in eBay. Live publishing is disabled for this pilot; no buyer can purchase them yet.';
+   }
+  }catch(err){offerProgress.textContent='Offers prepared, but publish readiness could not be verified: '+err.message;}
  });
  batchPublish.addEventListener('click',async()=>{
   const ids=[...batchSelected];
@@ -207,7 +217,7 @@
       if(checkbox.checked&&batchSelected.size>=25){checkbox.checked=false;batchResult.textContent='Select up to 25 items at a time.';return;}
       if(checkbox.checked)batchSelected.add(item.id);else batchSelected.delete(item.id);
       updateBatchControls();
-      batchResult.textContent=batchSelected.size+' selected. Click Check selected for eBay to validate the current selection.';
+      batchResult.textContent=batchSelected.size+' selected. Choose Publish selected to eBay when ready.';
      });
      const button=document.createElement('button');button.type='button';button.className='approved-item';
      const img=item.cover?'<img loading="lazy" src="'+esc(imageUrl(item.cover))+'" alt="">':'<span class="approved-no-photo">No photo</span>';
