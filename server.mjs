@@ -410,7 +410,7 @@ async function handle(req,res){
  const prepareRoute=p.match(/^\/api\/admin\/ebay\/unpublished-offers\/(RS-[A-F0-9]{10})$/);
  if(prepareRoute&&req.method==='GET')return json(res,200,unpublishedOffers.get(prepareRoute[1]));
  if(prepareRoute&&req.method==='POST'){
-  if(!throttle(req,'ebay_offer_prepare',5,15*60_000))return problem(res,429,'Unpublished offer preparation rate limit reached.');
+  if(!throttle(req,'ebay_offer_prepare',25,15*60_000))return problem(res,429,'Unpublished offer preparation rate limit reached.');
   const body=await readJson(req,12_000);
   const id=prepareRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
   if(!item)return problem(res,404,'Item not found.');
