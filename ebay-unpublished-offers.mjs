@@ -20,7 +20,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   db.exec("ALTER TABLE ebay_offer_preparations ADD COLUMN source_hash TEXT NOT NULL DEFAULT ''");
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
- function safeResult(id){const x=get(id);return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN'}:{id,state:'NOT_PREPARED',offerId:null,listingId:null};}
+ function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false};}
  async function call(url,options){
   let response;
   try{response=await fetcher(url,{...options,signal:AbortSignal.timeout(16000)});}
