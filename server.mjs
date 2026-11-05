@@ -398,7 +398,7 @@ async function handle(req,res){
  // Batch review is read-only and never sends data to eBay. Individual failures do not affect other items.
  if(req.method==='POST'&&p==='/api/admin/ebay/batch/preflight'){
   if(!throttle(req,'ebay_batch_preflight',30,15*60_000))return problem(res,429,'Too many batch checks.');
-  const body=await bodyJson(req,15_000);
+  const body=await readJson(req,15_000);
   const ids=body?.ids;
   if(!Array.isArray(ids)||ids.length<1||ids.length>25||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!/^RS-[A-F0-9]{10}$/.test(id)))return problem(res,400,'Select 1 to 25 unique listing references.');
   const rows=ids.map(id=>{
