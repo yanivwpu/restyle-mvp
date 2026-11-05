@@ -53,11 +53,12 @@ test('failed eBay offer creation quarantines item and never retries blindly',asy
  await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===409);
  assert.equal(x.calls.length,count);x.db.close();
 });
-test('unsupported claim or missing parcel dimensions is rejected before remote writes',async()=>{
+test('staff approved wording is not rejected; missing parcel dimensions still block remote writes',async()=>{
  const x=fixture();
- await assert.rejects(x.service.prepare({item,draft:{...draft,description:'Crafted from white gold.'},photos,settings}),e=>e.status===409);
- await assert.rejects(x.service.prepare({item,draft,photos,settings:{...settings,parcel:{}}}),e=>e.status===400);
- assert.equal(x.calls.length,0);x.db.close();
+ await assert.rejects(x.service.prepare({item,draft:{...draft,description:'Crafted from white gold.'},photos,settings:{...settings,parcel:{}}}),e=>e.status===400);
+ assert.equal(x.calls.length,0);
+ const result=await x.service.prepare({item,draft:{...draft,description:'Crafted from white gold.'},photos,settings});
+ assert.equal(result.state,'PREPARED');x.db.close();
 });
 
 test('live publication is disabled by default even after offer preparation',async()=>{
