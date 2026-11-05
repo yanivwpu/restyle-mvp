@@ -13,7 +13,7 @@ const sourceFingerprint=(item,draft,photos)=>crypto.createHash('sha256').update(
  facts:draft.verifiedFacts,aspects:draft.aspects,photos:photos.map(x=>[x.source,x.id])
 })).digest('hex');
 const CONDITIONS={'New with tags':'NEW','New without tags':'NEW_OTHER','Like new':'LIKE_NEW','Excellent':'USED_EXCELLENT','Good':'USED_GOOD','Fair':'USED_ACCEPTABLE'};
-export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true'}){
+export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true',prepareAllowed=(sku)=>slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim()).includes(sku)}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  // Additive migration for databases initialized before the controlled live-publish phase.
  if(!db.prepare('PRAGMA table_info(ebay_offer_preparations)').all().some(c=>c.name==='source_hash'))
@@ -69,9 +69,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  }
  async function prepare({item,draft,photos,duplicates,issues=[],settings}){
   if(!enabled())throw fail(409,'Unpublished eBay offer preparation is disabled until the first controlled pilot is approved.');
-  const pilotSkus=slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim()).filter(Boolean);
-  if(!pilotSkus.includes(item.sku)&&!pilotSkus.includes('*'))
-   throw fail(409,'This SKU is not authorized for the controlled unpublished-offer preparation pilot.');
+  if(!prepareAllowed(item.sku))throw fail(409,'This SKU is not authorized for the controlled unpublished-offer preparation pilot.');
   const checked=evaluateListingForBatch({item,draft,gates:issues,photos,duplicateSku:duplicates});
   if(!checked.localReady)throw fail(409,'Listing not locally ready: '+checked.blockers.join('; '));
   if(get(item.id))throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
