@@ -140,7 +140,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    const result=await api(token,'/sell/inventory/v1/offer/'+encodeURIComponent(row.offer_id)+'/publish','POST');
    if(!result.ok)throw eBayError(result,'Live eBay publishing');
    const listingId=slim(result.data?.listingId);
-   if(!/^\\d{5,30}$/.test(listingId))throw fail(502,'eBay did not return a verified listing ID. Reconciliation required.');
+   if(!/^\d{5,30}$/.test(listingId))throw fail(502,'eBay did not return a verified listing ID. Reconciliation required.');
    db.prepare("UPDATE ebay_offer_preparations SET state='LIVE',listing_id=?,last_error='',updated_at=? WHERE submission_id=? AND state='PUBLISHING'")
     .run(listingId,new Date(clock()).toISOString(),item.id);
    return safeResult(item.id);
