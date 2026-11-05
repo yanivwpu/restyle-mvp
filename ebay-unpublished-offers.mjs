@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import {evaluateListingForBatch} from './ebay-batch-readiness.mjs';
 
 // Explicitly guarded, one-off unpublished offer preparation.
@@ -6,9 +7,17 @@ const fail=(status,message)=>Object.assign(new Error(message),{status});
 const digits=v=>typeof v==='string'&&/^\d{1,30}$/.test(v);
 const slim=s=>String(s??'').trim();
 const finite=(n,min,max)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
+const sourceFingerprint=(item,draft,photos)=>crypto.createHash('sha256').update(JSON.stringify({
+ sku:item.sku,condition:item.condition,warehouseStatus:item.status,received:item.received_verified,bin:item.bin_location,
+ draftStatus:draft.status,title:draft.title,description:draft.description,price:draft.price_cents,category:draft.category_id,
+ facts:draft.verifiedFacts,aspects:draft.aspects,photos:photos.map(x=>[x.source,x.id])
+})).digest('hex');
 const CONDITIONS={'New with tags':'NEW','New without tags':'NEW_OTHER','Like new':'LIKE_NEW','Excellent':'USED_EXCELLENT','Good':'USED_GOOD','Fair':'USED_ACCEPTABLE'};
-export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true'}){
- db.exec("CREATE TABLE IF NOT EXISTS ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true'}){
+ db.exec("CREATE TABLE IF NOT EXISTS ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+ // Additive migration for databases initialized before the controlled live-publish phase.
+ if(!db.prepare('PRAGMA table_info(ebay_offer_preparations)').all().some(c=>c.name==='source_hash'))
+  db.exec("ALTER TABLE ebay_offer_preparations ADD COLUMN source_hash TEXT NOT NULL DEFAULT ''");
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
  function safeResult(id){const x=get(id);return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN'}:{id,state:'NOT_PREPARED',offerId:null,listingId:null};}
@@ -74,7 +83,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   const chosen=[slim(pol.paymentPolicyId),slim(pol.fulfillmentPolicyId),slim(pol.returnPolicyId),slim(cfg.merchantLocationKey)];
   if(chosen.some((v,i)=>!valid[i].has(v)))throw fail(409,'One or more selected business policies or the inventory location are unavailable to this seller.');
   const stamp=new Date(clock()).toISOString();
-  try{db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,policy_json,created_at,updated_at) VALUES (?,?,'PREPARING',?,?,?)").run(item.id,item.sku,JSON.stringify({policies:pol,location:chosen[3],parcel}),stamp,stamp);}
+  try{db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,policy_json,source_hash,created_at,updated_at) VALUES (?,?,'PREPARING',?,?,?,?)").run(item.id,item.sku,JSON.stringify({policies:pol,location:chosen[3],parcel}),sourceFingerprint(item,draft,photos),stamp,stamp);}
   catch{throw fail(409,'A preparation already exists for this item or warehouse SKU.');}
   // All remote actions after this point are non-idempotent or have uncertain outcomes.
   // Never automatically retry on failure; leave UNKNOWN and require reconciliation.
@@ -107,5 +116,39 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    throw err;
   }
  }
- return {get:safeResult,prepare};
+ async function publish({item,draft,photos,duplicates,issues=[],confirmation}){
+  if(!publishEnabled())throw fail(409,'Live eBay publishing is disabled until the controlled pilot succeeds.');
+  const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(x=>x.trim()).filter(Boolean);
+  if(!allow.includes(item.sku)&&!allow.includes('*'))throw fail(409,'This SKU is not authorized for the controlled live-publishing pilot.');
+  if(confirmation!=='PUBLISH_SELECTED_TO_EBAY')throw fail(400,'An explicit, deliberate publishing confirmation is required.');
+  const readiness=evaluateListingForBatch({item,draft,gates:issues,photos,duplicateSku:duplicates});
+  if(!readiness.localReady)throw fail(409,'Listing review changed: '+readiness.blockers.join('; '));
+  const row=db.prepare('SELECT * FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
+  if(!row||row.state!=='PREPARED'||!row.offer_id)throw fail(409,'An unpublished, verified eBay offer is required before live publication.');
+  if(row.sku!==item.sku||!row.source_hash||row.source_hash!==sourceFingerprint(item,draft,photos))
+   throw fail(409,'Listing details changed since the unpublished offer was created. Reconcile/update the eBay offer before publishing.');
+  const token=await oauth.getPublishingToken();
+  const remote=await api(token,'/sell/inventory/v1/offer/'+encodeURIComponent(row.offer_id));
+  if(!remote.ok)throw eBayError(remote,'Unpublished offer verification');
+  if(slim(remote.data?.sku)!==item.sku||remote.data?.listingId)
+   throw fail(409,'Remote offer SKU/state differs from SHUKCHIC. Manual reconciliation required.');
+  const stamp=new Date(clock()).toISOString();
+  const lock=db.prepare("UPDATE ebay_offer_preparations SET state='PUBLISHING',updated_at=? WHERE submission_id=? AND state='PREPARED'")
+   .run(stamp,item.id);
+  if(lock.changes!==1)throw fail(409,'Publishing request is already in progress or has been completed.');
+  try{
+   const result=await api(token,'/sell/inventory/v1/offer/'+encodeURIComponent(row.offer_id)+'/publish','POST');
+   if(!result.ok)throw eBayError(result,'Live eBay publishing');
+   const listingId=slim(result.data?.listingId);
+   if(!/^\\d{5,30}$/.test(listingId))throw fail(502,'eBay did not return a verified listing ID. Reconciliation required.');
+   db.prepare("UPDATE ebay_offer_preparations SET state='LIVE',listing_id=?,last_error='',updated_at=? WHERE submission_id=? AND state='PUBLISHING'")
+    .run(listingId,new Date(clock()).toISOString(),item.id);
+   return safeResult(item.id);
+  }catch(err){
+   db.prepare("UPDATE ebay_offer_preparations SET state='UNKNOWN',last_error=?,updated_at=? WHERE submission_id=? AND state='PUBLISHING'")
+    .run(String(err.message||'Uncertain publishing result').slice(0,400),new Date(clock()).toISOString(),item.id);
+   throw err;
+  }
+ }
+ return {get:safeResult,prepare,publish};
 }
