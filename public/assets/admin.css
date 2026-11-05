@@ -219,3 +219,11 @@
 .approved-specifics dl{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px 18px}
 .approved-specifics dt{font-size:11px;color:#746b63}
 .approved-specifics dd{margin:3px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+
+/* Staff bulk preparation queue: no live eBay publish action. */
+.approved-batch-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0}
+.approved-batch-toolbar span{font-size:12px;color:#62564f;margin-right:8px}
+.approved-batch-row{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:center;gap:8px;min-width:0}
+.approved-batch-row input[type=checkbox]{width:17px;height:17px;accent-color:#a76f49;cursor:pointer}
+.approved-batch-row .approved-item{width:100%}
+.approved-batch-feedback{grid-column:2;color:#69584c;font-size:11px;overflow-wrap:anywhere}
