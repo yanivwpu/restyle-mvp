@@ -13,7 +13,7 @@ const sourceFingerprint=(item,draft,photos)=>crypto.createHash('sha256').update(
  facts:draft.verifiedFacts,aspects:draft.aspects,photos:photos.map(x=>[x.source,x.id])
 })).digest('hex');
 const CONDITIONS={'New with tags':'NEW','New without tags':'NEW_OTHER','Like new':'LIKE_NEW','Excellent':'USED_EXCELLENT','Good':'USED_GOOD','Fair':'USED_ACCEPTABLE'};
-export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true',prepareAllowed=(sku)=>slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim()).includes(sku)}){
+export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true',prepareAllowed=(sku)=>{const allow=slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim());return allow.includes(sku)||allow.includes('*');}}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  // Additive migration for databases initialized before the controlled live-publish phase.
  if(!db.prepare('PRAGMA table_info(ebay_offer_preparations)').all().some(c=>c.name==='source_hash'))
