@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {createEbayUnpublishedOffers} from '../ebay-unpublished-offers.mjs';
+
+const item={id:'RS-A1B2C3D4E5',sku:'001',bin_location:'A1',received_verified:1,brand:'Aurelie Bidermann',condition:'New without tags'};
+const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'White with gold accent, new without tags.',price_cents:4500,category_id:'50647',verifiedFacts:{color:'White and Gold',category:'Ear Cuff'}};
+const photos=[{id:'12345678-1234-1234-1234-123456789abc',source:'warehouse'}];
+const settings={merchantLocationKey:'FL-WAREHOUSE',policies:{paymentPolicyId:'11',fulfillmentPolicyId:'22',returnPolicyId:'33'},parcel:{weightLb:0.3,lengthIn:6,widthIn:4,heightIn:3}};
+function response(status,data={}){return {status,ok:status>=200&&status<300,json:async()=>data,headers:{get:()=>null}};}
+function fixture({enabled=true,failOffer=false}={}){
+ const db=new DatabaseSync(':memory:');const calls=[];
+ const fetcher=async(url,opt={})=>{
+  calls.push({url,method:opt.method||'GET'});
+  if(url.includes('payment_policy'))return response(200,{paymentPolicies:[{paymentPolicyId:'11'}]});
+  if(url.includes('fulfillment_policy'))return response(200,{fulfillmentPolicies:[{fulfillmentPolicyId:'22'}]});
+  if(url.includes('return_policy'))return response(200,{returnPolicies:[{returnPolicyId:'33'}]});
+  if(url.includes('/location?'))return response(200,{locations:[{merchantLocationKey:'FL-WAREHOUSE'}]});
+  if(url.includes('/offer?sku='))return response(200,{offers:[]});
+  if(url.includes('/inventory_item/')&&opt.method==='GET')return response(404);
+  if(url.includes('/create_image_from_file'))return response(201,{imageUrl:'https://i.ebayimg.com/images/g/test/s-l500.jpg'});
+  if(url.includes('/inventory_item/')&&opt.method==='PUT')return response(204);
+  if(url.endsWith('/offer')&&opt.method==='POST')return failOffer?response(502,{errors:[{errorId:25101}]}):response(201,{offerId:'998877'});
+  throw Error('Unexpected eBay route '+url);
+ };
+ const service=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=>'test-token-1234567890'},fetcher,
+  loadPhoto:async()=>({bytes:Buffer.from([255,216,255]),mime:'image/jpeg'}),enabled:()=>enabled});
+ return {db,calls,service};
+}
+test('offer preparation stays disabled by default and causes no eBay writes',async()=>{
+ const x=fixture({enabled:false});
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===409);
+ assert.equal(x.calls.length,0);x.db.close();
+});
+test('approved SKU creates one unpublished offer, saves ID, and cannot be silently recreated',async()=>{
+ const x=fixture();
+ const result=await x.service.prepare({item,draft,photos,settings});
+ assert.equal(result.state,'PREPARED');assert.equal(result.offerId,'998877');assert.equal(result.listingId,null);
+ assert.equal(x.calls.filter(y=>y.method==='PUT').length,1);
+ assert.equal(x.calls.filter(y=>y.method==='POST'&&y.url.endsWith('/offer')).length,1);
+ const count=x.calls.length;
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===409);
+ assert.equal(x.calls.length,count);x.db.close();
+});
+test('failed eBay offer creation quarantines item and never retries blindly',async()=>{
+ const x=fixture({failOffer:true});
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===502);
+ assert.equal(x.service.get(item.id).requiresReconciliation,true);
+ const count=x.calls.length;
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===409);
+ assert.equal(x.calls.length,count);x.db.close();
+});
+test('unsupported claim or missing parcel dimensions is rejected before remote writes',async()=>{
+ const x=fixture();
+ await assert.rejects(x.service.prepare({item,draft:{...draft,description:'Crafted from white gold.'},photos,settings}),e=>e.status===409);
+ await assert.rejects(x.service.prepare({item,draft,photos,settings:{...settings,parcel:{}}}),e=>e.status===400);
+ assert.equal(x.calls.length,0);x.db.close();
+});
