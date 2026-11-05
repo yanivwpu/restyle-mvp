@@ -9,13 +9,15 @@ test('reviewed, physically received listing passes local checks but never enable
  assert.equal(row.livePublishEnabled,false);
  assert.equal(row.ebayOfferPrepared,false);
 });
-test('incorrect precious-metal and marketing claims are flagged; plain color description is safe',()=>{
- const plain=evaluateListingForBatch({item,draft,photos:[{id:'photo'}]});
- assert.equal(plain.localReady,true);
- const misleading=evaluateListingForBatch({item,draft:{...draft,description:'Made of white gold with gold accents. High-quality materials and fine craftsmanship.'},photos:[{id:'photo'}]});
- assert.equal(misleading.localReady,false);
- assert.ok(misleading.blockers.some(x=>x.includes('white-gold')));
- assert.ok(misleading.blockers.some(x=>x.includes('quality/craftsmanship')));
+test('staff reviewed description is accepted without AI phrasing heuristics',()=>{
+ const approved=evaluateListingForBatch({item,draft:{...draft,description:'White gold accents. High-quality materials and fine craftsmanship.'},photos:[{id:'photo'}]});
+ assert.equal(approved.localReady,true);
+ assert.deepEqual(approved.blockers,[]);
+});
+test('unreviewed description is still blocked by staff review requirement',()=>{
+ const pending=evaluateListingForBatch({item,draft:{...draft,status:'DRAFT',description:'High-quality materials.'},photos:[{id:'photo'}]});
+ assert.equal(pending.localReady,false);
+ assert.ok(pending.blockers.includes('Staff review required'));
 });
 test('missing verified warehouse, category, photographs, price, and duplicate SKU all block batch',()=>{
  const row=evaluateListingForBatch({item:{...item,received_verified:0},draft:{...draft,status:'DRAFT',category_id:'',price_cents:0},photos:[],duplicateSku:true});
