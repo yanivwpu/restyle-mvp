@@ -12,6 +12,7 @@ import { createEbayDeletionListener } from './ebay-deletion.mjs';
 import { createEbayOAuth } from './ebay-oauth.mjs';
 import { createEbayMapping } from './ebay-ai-mapping.mjs';
 import { evaluateListingForBatch } from './ebay-batch-readiness.mjs';
+import { createEbayUnpublishedOffers } from './ebay-unpublished-offers.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -95,6 +96,16 @@ const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,e
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
 const ebayOAuth=createEbayOAuth({db});
+const unpublishedOffers=createEbayUnpublishedOffers({db,oauth:ebayOAuth,loadPhoto:({id,source,submissionId})=>{
+ const table=source==='warehouse'?'warehouse_photos':source==='customer'?'photos':null;
+ if(!table||!/^[0-9a-f-]{36}$/.test(String(id)))throw Object.assign(new Error('Invalid listing photo reference.'),{status:409});
+ const photo=db.prepare('SELECT filename,mime FROM '+table+' WHERE id=? AND submission_id=?').get(id,submissionId);
+ if(!photo)throw Object.assign(new Error('Listing photo was not found in the warehouse.'),{status:409});
+ const filepath=path.resolve(UPLOAD_DIR,photo.filename);
+ if(!filepath.startsWith(UPLOAD_DIR+path.sep))throw Object.assign(new Error('Invalid listing photo location.'),{status:409});
+ return {bytes:fs.readFileSync(filepath),mime:photo.mime};
+}});
+
 const aiImageExpiresMs=90*60*1000;
 function aiPhotoUrls(sub){
  if(!SESSION_SECRET||!PUBLIC_BASE_URL.startsWith('https://'))throw Object.assign(new Error('Secure HTTPS photo sharing is not configured.'),{status:503});
@@ -395,6 +406,21 @@ async function handle(req,res){
    return json(res,201,{ok:true,id,emailStatus:recorded.email_status});
  }
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
+ // Unpublished eBay offer preparation. Explicit pilot flag; never calls publishOffer.
+ const prepareRoute=p.match(/^\/api\/admin\/ebay\/unpublished-offers\/(RS-[A-F0-9]{10})$/);
+ if(prepareRoute&&req.method==='GET')return json(res,200,unpublishedOffers.get(prepareRoute[1]));
+ if(prepareRoute&&req.method==='POST'){
+  if(!throttle(req,'ebay_offer_prepare',25,15*60_000))return problem(res,429,'Unpublished offer preparation rate limit reached.');
+  const body=await readJson(req,12_000);
+  const id=prepareRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
+  if(!item)return problem(res,404,'Item not found.');
+  const inspected=listingDrafts.inspect(item);
+  const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+  const prepared=await unpublishedOffers.prepare({item,draft:inspected.draft,photos:availablePhotos(id).effective,
+    issues:inspected.gates,duplicates,settings:body?.settings});
+  audit(id,'EBAY UNPUBLISHED OFFER PREPARED: '+prepared.offerId);
+  return json(res,200,prepared);
+ }
  // Batch review is read-only and never sends data to eBay. Individual failures do not affect other items.
  if(req.method==='POST'&&p==='/api/admin/ebay/batch/preflight'){
   if(!throttle(req,'ebay_batch_preflight',30,15*60_000))return problem(res,429,'Too many batch checks.');
