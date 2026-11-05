@@ -8,7 +8,7 @@ const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'W
 const photos=[{id:'12345678-1234-1234-1234-123456789abc',source:'warehouse'}];
 const settings={merchantLocationKey:'FL-WAREHOUSE',policies:{paymentPolicyId:'11',fulfillmentPolicyId:'22',returnPolicyId:'33'},parcel:{weightLb:0.3,lengthIn:6,widthIn:4,heightIn:3}};
 function response(status,data={}){return {status,ok:status>=200&&status<300,json:async()=>data,headers:{get:()=>null}};}
-function fixture({enabled=true,failOffer=false}={}){
+function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false}={}){
  const db=new DatabaseSync(':memory:');const calls=[];
  const fetcher=async(url,opt={})=>{
   calls.push({url,method:opt.method||'GET'});
@@ -21,10 +21,13 @@ function fixture({enabled=true,failOffer=false}={}){
   if(url.includes('/create_image_from_file'))return response(201,{imageUrl:'https://i.ebayimg.com/images/g/test/s-l500.jpg'});
   if(url.includes('/inventory_item/')&&opt.method==='PUT')return response(204);
   if(url.endsWith('/offer')&&opt.method==='POST')return failOffer?response(502,{errors:[{errorId:25101}]}):response(201,{offerId:'998877'});
+  if(url.endsWith('/offer/998877')&&opt.method==='GET')return response(200,{sku:'001'});
+  if(url.endsWith('/offer/998877/publish')&&opt.method==='POST')return failPublish?response(502,{errors:[{errorId:25704}]}):response(200,{listingId:'123456789012'});
+
   throw Error('Unexpected eBay route '+url);
  };
  const service=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=>'test-token-1234567890'},fetcher,
-  loadPhoto:async()=>({bytes:Buffer.from([255,216,255]),mime:'image/jpeg'}),enabled:()=>enabled});
+  loadPhoto:async()=>({bytes:Buffer.from([255,216,255]),mime:'image/jpeg'}),enabled:()=>enabled,publishEnabled:()=>publishEnabled});
  return {db,calls,service};
 }
 test('offer preparation stays disabled by default and causes no eBay writes',async()=>{
@@ -55,4 +58,43 @@ test('unsupported claim or missing parcel dimensions is rejected before remote w
  await assert.rejects(x.service.prepare({item,draft:{...draft,description:'Crafted from white gold.'},photos,settings}),e=>e.status===409);
  await assert.rejects(x.service.prepare({item,draft,photos,settings:{...settings,parcel:{}}}),e=>e.status===400);
  assert.equal(x.calls.length,0);x.db.close();
+});
+
+test('live publication is disabled by default even after offer preparation',async()=>{
+ const x=fixture();await x.service.prepare({item,draft,photos,settings});
+ await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===409);
+ assert.equal(x.service.get(item.id).state,'PREPARED');x.db.close();
+});
+test('explicit SKU-allowlisted publication stores listing ID exactly once',async()=>{
+ const original=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;
+ process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true});
+  await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'WRONG'}),e=>e.status===400);
+  const published=await x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'});
+  assert.equal(published.state,'LIVE');assert.equal(published.listingId,'123456789012');
+  assert.equal(x.calls.filter(y=>y.url.endsWith('/publish')).length,1);
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===409);
+  assert.equal(x.calls.filter(y=>y.url.endsWith('/publish')).length,1);x.db.close();
+ }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
+});
+test('changed approved listing after preparation blocks live publishing',async()=>{
+ const original=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true});await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft:{...draft,price_cents:4600},photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===409);
+  assert.equal(x.service.get(item.id).state,'PREPARED');x.db.close();
+ }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
+});
+test('ambiguous eBay live publish response quarantines offer, never retries automatically',async()=>{
+ const original=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true,failPublish:true});await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===502);
+  assert.equal(x.service.get(item.id).state,'UNKNOWN');
+  const count=x.calls.filter(y=>y.url.endsWith('/publish')).length;
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===409);
+  assert.equal(x.calls.filter(y=>y.url.endsWith('/publish')).length,count);x.db.close();
+ }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
 });

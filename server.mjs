@@ -421,6 +421,21 @@ async function handle(req,res){
   audit(id,'EBAY UNPUBLISHED OFFER PREPARED: '+prepared.offerId);
   return json(res,200,prepared);
  }
+ // Staff-confirmed live publishing; separate Railway enablement and explicit SKU allowlist.
+ const liveRoute=p.match(/^\/api\/admin\/ebay\/offers\/publish\/(RS-[A-F0-9]{10})$/);
+ if(req.method==='POST'&&liveRoute){
+  if(!throttle(req,'ebay_live_publish',25,15*60_000))return problem(res,429,'Live publishing rate limit reached.');
+  const body=await readJson(req,3000);
+  const id=liveRoute[1],item=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);
+  if(!item)return problem(res,404,'Submission not found.');
+  const inspected=listingDrafts.inspect(item);
+  const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+  const published=await unpublishedOffers.publish({item,draft:inspected.draft,photos:availablePhotos(id).effective,
+   issues:inspected.gates,duplicates,confirmation:body?.confirmation});
+  db.prepare("UPDATE submissions SET status='LISTED',updated_at=? WHERE id=? AND status IN ('RECEIVED','READY_TO_LIST')").run(now(),id);
+  audit(id,'EBAY LISTING PUBLISHED (explicit staff approval): '+published.listingId);
+  return json(res,200,published);
+ }
  // Batch review is read-only and never sends data to eBay. Individual failures do not affect other items.
  if(req.method==='POST'&&p==='/api/admin/ebay/batch/preflight'){
   if(!throttle(req,'ebay_batch_preflight',30,15*60_000))return problem(res,429,'Too many batch checks.');
@@ -440,7 +455,7 @@ async function handle(req,res){
  }
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
-  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,p.state AS ebay_offer_state,p.offer_id,p.listing_id FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
   return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);

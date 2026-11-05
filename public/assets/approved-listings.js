@@ -13,12 +13,13 @@
   batchCount.textContent=batchSelected.size+' selected (maximum 25)';
   batchCheck.disabled=batchSelected.size===0;
   if(offerSetup)offerSetup.disabled=batchSelected.size===0;
+  if(batchPublish)batchPublish.disabled=batchSelected.size===0;
   grid.querySelectorAll('input[data-batch-id]').forEach(el=>{el.checked=batchSelected.has(el.dataset.batchId);});
  }
  const selectReviewed=$('#approvedBatchSelectReviewed');
  if(selectReviewed)selectReviewed.addEventListener('click',()=>{
   batchSelected.clear();
-  for(const item of batchItems.filter(x=>x.review_status==='REVIEWED').slice(0,25))batchSelected.add(item.id);
+  for(const item of batchItems.filter(x=>x.review_status==='REVIEWED'&&x.ebay_offer_state!=='LIVE'&&x.ebay_offer_state!=='UNKNOWN').slice(0,25))batchSelected.add(item.id);
   updateBatchControls();
  });
  const clearBatch=$('#approvedBatchClear');
@@ -41,6 +42,7 @@
  });
 
 
+ const batchPublish=$('#approvedBatchPublish');
  const offerForm=$('#approvedBatchOfferForm'),offerSetup=$('#approvedBatchOfferSetup');
  const offerRows=$('#approvedOfferParcelRows'),offerProgress=$('#approvedOfferProgress'),offerConfirm=$('#approvedOfferConfirm');
  function fillOfferOptions(element,items,placeholder){
@@ -105,6 +107,37 @@
   offerProgress.textContent=completed+' unpublished offers prepared successfully. Nothing has been published.';
   offerSetup.disabled=false;
  });
+ batchPublish.addEventListener('click',async()=>{
+  const ids=[...batchSelected];
+  if(!ids.length||ids.length>25)return;
+  batchPublish.disabled=true;
+  try{
+   const statuses=await Promise.all(ids.map(id=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id))));
+   const missing=statuses.filter(s=>s.state!=='PREPARED');
+   if(missing.length)throw Error('All selected items must have an unpublished, verified eBay offer first. '+missing.length+' not prepared.');
+   const typed=window.prompt('You are about to publish '+ids.length+' listings LIVE on eBay. Type PUBLISH to confirm:');
+   if(typed!=='PUBLISH'){batchResult.textContent='Live publishing cancelled. No changes made.';return;}
+   if(!window.confirm('Publish '+ids.length+' eBay listings now? Buyers may immediately purchase them.'))return;
+   let done=0;
+   for(const id of ids){
+    batchResult.textContent='Publishing '+(done+1)+' of '+ids.length+' listings to eBay…';
+    const response=await fetch('/api/admin/ebay/offers/publish/'+encodeURIComponent(id),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:'PUBLISH_SELECTED_TO_EBAY'})});
+    const data=await response.json();
+    if(!response.ok)throw Error('Stopped at '+id+' after '+done+' live listings: '+(data.error||'eBay publication failed.'));
+    done++;
+    const feedback=grid.querySelector('[data-batch-result="'+id+'"]');
+    if(feedback&&/^\d{5,30}$/.test(data.listingId||'')){
+     feedback.replaceChildren();
+     const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+data.listingId;
+     link.target='_blank';link.rel='noopener noreferrer';link.textContent='Live on eBay — listing '+data.listingId;
+     feedback.append(link);
+    }
+   }
+   batchResult.textContent=done+' listings published to eBay. Each listing ID has been saved.';
+   batchSelected.clear();await load();
+  }catch(err){batchResult.textContent='Live publishing stopped: '+err.message+' Check listing states before any retry.';}
+  finally{updateBatchControls();}
+ });
  async function load(){
    if(status)status.textContent='Refreshing listings…';
    try{
@@ -118,7 +151,7 @@
     for(const item of list){
      const wrapper=document.createElement('div');wrapper.className='approved-batch-row';
      const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.batchId=item.id;
-     checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);
+     checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);checkbox.disabled=item.ebay_offer_state==='LIVE'||item.ebay_offer_state==='UNKNOWN';
      checkbox.addEventListener('change',()=>{
       if(checkbox.checked&&batchSelected.size>=25){checkbox.checked=false;batchResult.textContent='Select up to 25 items at a time.';return;}
       if(checkbox.checked)batchSelected.add(item.id);else batchSelected.delete(item.id);
@@ -126,7 +159,7 @@
      });
      const button=document.createElement('button');button.type='button';button.className='approved-item';
      const img=item.cover?'<img loading="lazy" src="'+esc(imageUrl(item.cover))+'" alt="">':'<span class="approved-no-photo">No photo</span>';
-     button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
+     button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.ebay_offer_state==='LIVE'?'Live on eBay':item.ebay_offer_state==='PREPARED'?'Unpublished offer ready':item.ebay_offer_state==='UNKNOWN'?'eBay reconciliation needed':item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
      button.addEventListener('click',()=>show(item.id));
      const feedback=document.createElement('small');feedback.className='approved-batch-feedback';feedback.dataset.batchResult=item.id;
      wrapper.append(checkbox,button,feedback);grid.append(wrapper);
