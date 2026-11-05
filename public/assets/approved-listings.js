@@ -6,22 +6,67 @@
  const fetchData=async(url)=>{const response=await fetch(url,{credentials:'same-origin'});const data=await response.json();if(!response.ok)throw Error(data.error||'Request failed');return data;};
  const imageUrl=photo=>'/api/admin/'+(photo.source==='warehouse'?'warehouse-photos/':'photos/')+encodeURIComponent(photo.id);
  const currency=v=>v==null?'Price pending':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);
+ const batchSelected=new Set();
+ let batchItems=[];
+ const batchCount=$('#approvedBatchSelected'),batchCheck=$('#approvedBatchPreflight'),batchResult=$('#approvedBatchResults');
+ function updateBatchControls(){
+  batchCount.textContent=batchSelected.size+' selected (maximum 25)';
+  batchCheck.disabled=batchSelected.size===0;
+  grid.querySelectorAll('input[data-batch-id]').forEach(el=>{el.checked=batchSelected.has(el.dataset.batchId);});
+ }
+ const selectReviewed=$('#approvedBatchSelectReviewed');
+ if(selectReviewed)selectReviewed.addEventListener('click',()=>{
+  batchSelected.clear();
+  for(const item of batchItems.filter(x=>x.review_status==='REVIEWED').slice(0,25))batchSelected.add(item.id);
+  updateBatchControls();
+ });
+ const clearBatch=$('#approvedBatchClear');
+ if(clearBatch)clearBatch.addEventListener('click',()=>{batchSelected.clear();updateBatchControls();batchResult.textContent='Selection cleared. No changes made to eBay.';});
+ batchCheck.addEventListener('click',async()=>{
+  if(batchSelected.size<1||batchSelected.size>25)return;
+  batchCheck.disabled=true;batchResult.textContent='Checking selected listing drafts…';
+  try{
+   const response=await fetch('/api/admin/ebay/batch/preflight',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[...batchSelected]})});
+   const data=await response.json();
+   if(!response.ok)throw Error(data.error||'Batch check failed.');
+   const failed=(data.items||[]).filter(x=>!x.localReady);
+   batchResult.textContent=data.localReady+' of '+data.total+' passed local review checks. '+(failed.length?failed.map(x=>x.sku||x.id).slice(0,5).join(', ')+' need edits. ':'')+'No eBay offers created or published.';
+   for(const item of data.items||[]){
+    const label=grid.querySelector('[data-batch-result="'+item.id+'"]');
+    if(label)label.textContent=item.localReady?'Local checks passed (eBay validation still required)':item.blockers.join('; ');
+   }
+  }catch(err){batchResult.textContent='Could not check batch: '+err.message;}
+  finally{updateBatchControls();}
+ });
+
  async function load(){
    if(status)status.textContent='Refreshing listings…';
    try{
     const data=await fetchData('/api/admin/approved-listings');
     const list=data.items||[];
+    batchItems=list;for(const id of [...batchSelected])if(!list.some(x=>x.id===id))batchSelected.delete(id);
     $('#approvedListingsCount').textContent=list.filter(x=>x.review_status==='REVIEWED').length;
     if(status)status.textContent=list.length+' total · '+list.filter(x=>x.review_status==='REVIEWED').length+' staff reviewed · '+list.filter(x=>x.review_status!=='REVIEWED').length+' awaiting review';
     if(!list.length){grid.innerHTML='<p class="detail-meta">No listing drafts yet. Create an AI listing draft from an incoming item to see it here.</p>';return;}
     grid.replaceChildren();
     for(const item of list){
+     const wrapper=document.createElement('div');wrapper.className='approved-batch-row';
+     const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.batchId=item.id;
+     checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);
+     checkbox.addEventListener('change',()=>{
+      if(checkbox.checked&&batchSelected.size>=25){checkbox.checked=false;batchResult.textContent='Select up to 25 items at a time.';return;}
+      if(checkbox.checked)batchSelected.add(item.id);else batchSelected.delete(item.id);
+      updateBatchControls();
+     });
      const button=document.createElement('button');button.type='button';button.className='approved-item';
      const img=item.cover?'<img loading="lazy" src="'+esc(imageUrl(item.cover))+'" alt="">':'<span class="approved-no-photo">No photo</span>';
      button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
      button.addEventListener('click',()=>show(item.id));
-     grid.append(button);
+     const feedback=document.createElement('small');feedback.className='approved-batch-feedback';feedback.dataset.batchResult=item.id;
+     wrapper.append(checkbox,button,feedback);grid.append(wrapper);
+    
     }
+    updateBatchControls();
    }catch(err){if(status)status.textContent='Could not refresh: '+err.message; if(!grid.children.length)grid.textContent='Unable to load listings: '+err.message;}
  }
  async function show(id){
