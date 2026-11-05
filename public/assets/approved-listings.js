@@ -126,7 +126,7 @@
     if(!response.ok)throw Error('Stopped at '+id+' after '+done+' live listings: '+(data.error||'eBay publication failed.'));
     done++;
     const feedback=grid.querySelector('[data-batch-result="'+id+'"]');
-    if(feedback&&/^\\d{5,30}$/.test(data.listingId||'')){
+    if(feedback&&/^\d{5,30}$/.test(data.listingId||'')){
      feedback.replaceChildren();
      const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+data.listingId;
      link.target='_blank';link.rel='noopener noreferrer';link.textContent='Live on eBay — listing '+data.listingId;
