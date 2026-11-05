@@ -12,6 +12,7 @@
  function updateBatchControls(){
   batchCount.textContent=batchSelected.size+' selected (maximum 25)';
   batchCheck.disabled=batchSelected.size===0;
+  if(offerSetup)offerSetup.disabled=batchSelected.size===0;
   grid.querySelectorAll('input[data-batch-id]').forEach(el=>{el.checked=batchSelected.has(el.dataset.batchId);});
  }
  const selectReviewed=$('#approvedBatchSelectReviewed');
@@ -39,6 +40,71 @@
   finally{updateBatchControls();}
  });
 
+
+ const offerForm=$('#approvedBatchOfferForm'),offerSetup=$('#approvedBatchOfferSetup');
+ const offerRows=$('#approvedOfferParcelRows'),offerProgress=$('#approvedOfferProgress'),offerConfirm=$('#approvedOfferConfirm');
+ function fillOfferOptions(element,items,placeholder){
+  element.replaceChildren();
+  const first=document.createElement('option');first.value='';first.textContent=placeholder;element.append(first);
+  for(const x of items||[]){const option=document.createElement('option');option.value=x.id;option.textContent=(x.name||x.id)+' ('+x.id+')';element.append(option);}
+ }
+ offerSetup.addEventListener('click',async()=>{
+  offerProgress.textContent='Reading eBay policies and locations…';
+  offerForm.hidden=false;
+  try{
+   const data=await fetchData('/api/admin/ebay/publishing/setup');
+   if(!data.connected)throw Error('Reconnect eBay publishing permission first.');
+   const sources=[['#approvedOfferPayment',data.policies?.payment,'Select payment'],['#approvedOfferShipping',data.policies?.fulfillment,'Select shipping'],['#approvedOfferReturns',data.policies?.returns,'Select returns'],['#approvedOfferLocation',data.locations,'Select eBay location']];
+   for(const [id,value,label] of sources){
+    if(!value?.available)throw Error('eBay '+label.toLowerCase()+' details not available.');
+    fillOfferOptions($(id),value.items,label);
+   }
+   offerRows.replaceChildren();
+   for(const id of batchSelected){
+    const item=batchItems.find(x=>x.id===id);
+    const row=document.createElement('div');row.className='approved-parcel-row';row.dataset.offerItem=id;
+    const heading=document.createElement('strong');heading.textContent=(item?.sku||id)+' — '+(item?.title||'Item');
+    row.append(heading);
+    for(const [field,label] of [['weightLb','Weight (lb)'],['lengthIn','Length (in)'],['widthIn','Width (in)'],['heightIn','Height (in)']]){
+     const wrap=document.createElement('label');wrap.textContent=label;
+     const input=document.createElement('input');input.type='number';input.required=true;input.min='0.01';input.max='150';input.step='0.01';input.dataset.parcelField=field;
+     wrap.append(input);row.append(wrap);
+    }
+    offerRows.append(row);
+   }
+   offerProgress.textContent='No eBay offer has been created. Confirm the actual packed dimensions before preparing.';
+  }catch(err){offerProgress.textContent='Cannot prepare eBay offers: '+err.message;offerConfirm.disabled=true;return;}
+  offerConfirm.disabled=false;
+ });
+ $('#approvedOfferCancel').addEventListener('click',()=>{offerForm.hidden=true;offerProgress.textContent='Preparation cancelled. No listings were created.';});
+ offerConfirm.addEventListener('click',async()=>{
+  const controls=[['paymentPolicyId','#approvedOfferPayment'],['fulfillmentPolicyId','#approvedOfferShipping'],['returnPolicyId','#approvedOfferReturns']];
+  const policies=Object.fromEntries(controls.map(([key,id])=>[key,$(id).value]));
+  const merchantLocationKey=$('#approvedOfferLocation').value;
+  if(Object.values(policies).some(x=>!x)||!merchantLocationKey){offerProgress.textContent='Choose every eBay policy and location.';return;}
+  const selected=[...offerRows.querySelectorAll('[data-offer-item]')];
+  const parcels=selected.map(row=>({id:row.dataset.offerItem,parcel:Object.fromEntries([...row.querySelectorAll('[data-parcel-field]')].map(input=>[input.dataset.parcelField,Number(input.value)]))}));
+  if(parcels.some(x=>Object.values(x.parcel).some(n=>!Number.isFinite(n)||n<=0))){offerProgress.textContent='Enter the actual weight and dimensions for every selected item.';return;}
+  if(!window.confirm('Prepare '+parcels.length+' UNPUBLISHED eBay offers? Inventory records and photos will be sent to eBay, but no listing will go live.'))return;
+  offerConfirm.disabled=true;offerSetup.disabled=true;
+  let completed=0;
+  for(const entry of parcels){
+   offerProgress.textContent='Preparing '+(completed+1)+' of '+parcels.length+'…';
+   try{
+    const response=await fetch('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(entry.id),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:{policies,merchantLocationKey,parcel:entry.parcel}})});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.error||'eBay preparation failed.');
+    completed++;
+    const label=grid.querySelector('[data-batch-result="'+entry.id+'"]');
+    if(label)label.textContent='Unpublished eBay offer '+data.offerId+' created. Not live.';
+   }catch(err){
+    offerProgress.textContent='Stopped after '+completed+' of '+parcels.length+' prepared. '+entry.id+': '+err.message+' Do not retry uncertain eBay writes until reconciled.';
+    offerSetup.disabled=false;return;
+   }
+  }
+  offerProgress.textContent=completed+' unpublished offers prepared successfully. Nothing has been published.';
+  offerSetup.disabled=false;
+ });
  async function load(){
    if(status)status.textContent='Refreshing listings…';
    try{
