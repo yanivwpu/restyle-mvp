@@ -188,6 +188,33 @@
     connectionButton.textContent=publishingConnected?'Check eBay seller setup':'Connect eBay publishing';
     publishMessage.textContent=publishingConnected?'Publishing authorization connected. Check seller settings before eBay offer creation. No listing has been published.':'Connect publishing authorization to prepare an unpublished eBay offer. Nothing will be published during connection.';
    }catch(err){publishMessage.textContent='eBay publishing status could not be checked: '+err.message;}
+   const publishButton=$('#approvedPublish');
+   try{
+    const offer=await fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id));
+    if(offer.state==='PREPARED'){
+     publishMessage.textContent='Unpublished eBay offer '+offer.offerId+' is ready. '+(offer.livePublishAvailable?'Samantha can review and publish this listing.':'Live publishing remains disabled for the controlled pilot.');
+     publishButton.disabled=!offer.livePublishAvailable;
+    }else if(offer.state==='LIVE'&&/^\d{5,30}$/.test(offer.listingId||'')){
+     publishMessage.replaceChildren();
+     const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+offer.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View published eBay listing '+offer.listingId;
+     publishMessage.append(link);
+    }else if(offer.state==='UNKNOWN'){
+     publishMessage.textContent='eBay offer outcome requires manual reconciliation. Publishing is blocked.';
+    }
+   }catch(err){publishMessage.textContent+=' Unable to read eBay offer status: '+err.message;}
+   publishButton.addEventListener('click',async()=>{
+    if(publishButton.disabled)return;
+    if(window.prompt('Publish this listing LIVE on eBay? Type PUBLISH to confirm:')!=='PUBLISH')return;
+    if(!window.confirm('Confirm publication: buyers may immediately purchase this item on eBay.'))return;
+    publishButton.disabled=true;publishMessage.textContent='Publishing to eBay…';
+    try{
+     const response=await fetch('/api/admin/ebay/offers/publish/'+encodeURIComponent(id),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:'PUBLISH_SELECTED_TO_EBAY'})});
+     const result=await response.json();
+     if(!response.ok)throw Error(result.error||'eBay publishing failed.');
+     publishMessage.textContent='eBay listing '+result.listingId+' published successfully. Open Listing Queue for the live link.';
+     await load();
+    }catch(err){publishMessage.textContent='eBay publishing stopped: '+err.message+' Verify the listing state before retrying.';}
+   });
    // A renamed seller can invalidate the separate publishing refresh token even when the standard seller token is healthy.
    // Starting consent again replaces the publishing token only after eBay verifies the same immutable seller ID.
    renewPublishingButton.addEventListener('click',async()=>{
