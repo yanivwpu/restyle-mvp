@@ -8,7 +8,7 @@ const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'W
 const photos=[{id:'12345678-1234-1234-1234-123456789abc',source:'warehouse'}];
 const settings={merchantLocationKey:'FL-WAREHOUSE',policies:{paymentPolicyId:'11',fulfillmentPolicyId:'22',returnPolicyId:'33'},parcel:{weightLb:0.3,lengthIn:6,widthIn:4,heightIn:3}};
 function response(status,data={}){return {status,ok:status>=200&&status<300,json:async()=>data,headers:{get:()=>null}};}
-function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,missingStyle=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
+function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,missingStyle=false,missingWeight=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
  const db=new DatabaseSync(':memory:');const calls=[];let inventoryRecord=null;
  const fetcher=async(url,opt={})=>{
   calls.push({url,method:opt.method||'GET',headers:opt.headers||{},body:typeof opt.body==='string'?opt.body:null});
@@ -23,7 +23,7 @@ function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=
   if(url.includes('/inventory_item/')&&opt.method==='PUT'){inventoryRecord=JSON.parse(opt.body);return response(204);}
   if(url.endsWith('/offer')&&opt.method==='POST')return failOffer?response(502,{errors:[{errorId:25101}]}):response(201,{offerId:'998877'});
   if(url.endsWith('/offer/998877')&&opt.method==='GET')return response(200,{sku:'001'});
-  if(url.endsWith('/offer/998877/publish')&&opt.method==='POST')return missingStyle?response(400,{errors:[{errorId:25002,message:'The item specific Style is missing. Add Style to this listing, enter a valid value, and then try again.'}]}):failPublish?response(502,{errors:[{errorId:25704}]}):response(200,{listingId:'123456789012'});
+  if(url.endsWith('/offer/998877/publish')&&opt.method==='POST')return missingWeight?response(400,{errors:[{errorId:25020,message:'The package weight is not valid or is missing. Provide a valid number for the weight.'}]}):missingStyle?response(400,{errors:[{errorId:25002,message:'The item specific Style is missing. Add Style to this listing, enter a valid value, and then try again.'}]}):failPublish?response(502,{errors:[{errorId:25704}]}):response(200,{listingId:'123456789012'});
 
   throw Error('Unexpected eBay route '+url);
  };
@@ -241,4 +241,35 @@ test('saved eBay 25002 missing-Style failure exposes repair action regardless of
  .run('Live eBay publishing rejected by eBay (HTTP 400; codes 25002): Missing Color.',item.id);
  assert.equal(service.get(item.id).styleFixAvailable,false);
  db.close();
+});
+
+test('25020 shipping weight validation can repair existing offer without duplicating or publishing',async()=>{
+ const old=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true,missingWeight:true});
+  await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===502);
+  assert.equal(x.service.get(item.id).weightFixAvailable,true);
+  await assert.rejects(x.service.repairWeight({item,ounces:0}),e=>e.status===400);
+  const done=await x.service.repairWeight({item,ounces:2});
+  assert.equal(done.state,'PREPARED');
+  const puts=x.calls.filter(c=>c.method==='PUT'&&c.url.includes('/inventory_item/'));
+  assert.equal(puts.length,2);
+  assert.deepEqual(JSON.parse(puts[1].body).packageWeightAndSize.weight,{unit:'OUNCE',value:2});
+  assert.equal(x.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/offer')).length,1);
+  assert.equal(x.calls.filter(c=>c.url.endsWith('/publish')).length,1);
+  x.db.close();
+ }finally{if(old===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=old;}
+});
+test('ambiguous errors cannot initiate weight repair',async()=>{
+ const old=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true,failPublish:true});
+  await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}));
+  assert.equal(x.service.get(item.id).weightFixAvailable,false);
+  await assert.rejects(x.service.repairWeight({item,ounces:2}),e=>e.status===409);
+  assert.equal(x.calls.filter(c=>c.method==='PUT').length,1);
+  x.db.close();
+ }finally{if(old===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=old;}
 });
