@@ -25,6 +25,10 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  if(recovered.changes>0)console.info('Recovered '+recovered.changes+' legacy read-only eBay offer lookup failure(s).');
  const recoveredInventory=db.prepare("DELETE FROM ebay_offer_preparations WHERE state='BLOCKED_READ_ONLY' AND offer_id IS NULL AND listing_id IS NULL AND last_error LIKE 'Existing inventory lookup rejected by eBay (HTTP 400; codes 25709)%'").run();
  if(recoveredInventory.changes>0)console.info('Recovered '+recoveredInventory.changes+' read-only eBay inventory lookup failure(s).');
+ // The exact 25709 error on the fallback inventory collection was a rejected
+ // Accept-Language header on a GET, before any mutation was attempted.
+ const recoveredLanguage=db.prepare("DELETE FROM ebay_offer_preparations WHERE state='BLOCKED_READ_ONLY' AND offer_id IS NULL AND listing_id IS NULL AND last_error LIKE 'Inventory collection fallback rejected by eBay (HTTP 400; codes 25709)%Invalid value for header Accept-Language%'").run();
+ if(recoveredLanguage.changes>0)console.info('Recovered '+recoveredLanguage.changes+' eBay inventory Accept-Language read-only failure(s).');
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
  function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false};}
@@ -37,7 +41,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   return {status:response.status,ok:response.ok,data,headers:response.headers};
  }
  async function api(token,path,method='GET',body){
-  return call('https://api.ebay.com'+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json',...(body?{'Content-Type':'application/json','Content-Language':'en-US'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  return call('https://api.ebay.com'+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json','Accept-Language':'en-US',...(body?{'Content-Type':'application/json','Content-Language':'en-US'}:{})},...(body?{body:JSON.stringify(body)}:{})});
  }
  function eBayError(result,step){
   const errors=(result.data?.errors||[]).slice(0,4);
@@ -119,7 +123,9 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
      /^Existing offer lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
    const oldInventoryRead=prior.state==='BLOCKED_READ_ONLY'&&
      /^Existing inventory lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
-   if(!prior.offer_id&&!prior.listing_id&&(oldOfferRead||oldInventoryRead)){
+   const oldLanguageRead=prior.state==='BLOCKED_READ_ONLY'&&
+     /^Inventory collection fallback rejected by eBay \(HTTP 400; codes 25709\).*Invalid value for header Accept-Language/.test(prior.last_error||'');
+   if(!prior.offer_id&&!prior.listing_id&&(oldOfferRead||oldInventoryRead||oldLanguageRead)){
     db.prepare("DELETE FROM ebay_offer_preparations WHERE submission_id=? AND state=? AND offer_id IS NULL AND listing_id IS NULL AND last_error=?")
       .run(item.id,prior.state,prior.last_error);
    }else throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');

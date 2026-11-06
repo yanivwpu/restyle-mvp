@@ -11,7 +11,7 @@ function response(status,data={}){return {status,ok:status>=200&&status<300,json
 function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
  const db=new DatabaseSync(':memory:');const calls=[];
  const fetcher=async(url,opt={})=>{
-  calls.push({url,method:opt.method||'GET'});
+  calls.push({url,method:opt.method||'GET',headers:opt.headers||{}});
   if(url.includes('payment_policy'))return response(200,{paymentPolicies:[{paymentPolicyId:'11'}]});
   if(url.includes('fulfillment_policy'))return response(200,{fulfillmentPolicies:[{fulfillmentPolicyId:'22'}]});
   if(url.includes('return_policy'))return response(200,{returnPolicies:[{returnPolicyId:'33'}]});
@@ -162,5 +162,30 @@ test('startup recovers only known pre-write 25709 failures; uncertain writes rem
  assert.equal(service.get('RS-A1B2C3D4E5').state,'NOT_PREPARED');
  assert.equal(service.get('RS-1111111111').state,'UNKNOWN');
  assert.equal(service.get('RS-2222222222').state,'UNKNOWN');
+ db.close();
+});
+
+test('eBay Inventory requests send explicit supported US Accept-Language, not fetch default',async()=>{
+ const x=fixture({inventoryReadError:true});
+ const prepared=await x.service.prepare({item,draft,photos,settings});
+ assert.equal(prepared.state,'PREPARED');
+ for(const call of x.calls.filter(c=>c.url.startsWith('https://api.ebay.com/sell/inventory/'))){
+  assert.equal(call.headers['Accept-Language'],'en-US');
+ }
+ assert.ok(x.calls.some(c=>c.url.includes('/inventory_item?limit=100&offset=0')));
+ x.db.close();
+});
+test('only an old blocked read-only Accept-Language rejection is recovered, never an uncertain write',()=>{
+ const db=new DatabaseSync(':memory:');
+ db.exec("CREATE TABLE ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+ const add=db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,offer_id,last_error,created_at,updated_at) VALUES (?,?, ?, ?, ?, ?, ?)");
+ const t=new Date().toISOString(),error='Inventory collection fallback rejected by eBay (HTTP 400; codes 25709): Invalid value for header Accept-Language.';
+ add.run('RS-A1B2C3D4E5','001','BLOCKED_READ_ONLY',null,error,t,t);
+ add.run('RS-1111111111','002','UNKNOWN',null,error,t,t);
+ add.run('RS-2222222222','003','BLOCKED_READ_ONLY','offer123',error,t,t);
+ const svc=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=>'test-token'},loadPhoto:async()=>null});
+ assert.equal(svc.get('RS-A1B2C3D4E5').state,'NOT_PREPARED');
+ assert.equal(svc.get('RS-1111111111').state,'UNKNOWN');
+ assert.equal(svc.get('RS-2222222222').state,'BLOCKED_READ_ONLY');
  db.close();
 });
