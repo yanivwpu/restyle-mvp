@@ -157,15 +157,15 @@
     const row=document.createElement('div');row.className='approved-parcel-row';row.dataset.offerItem=id;
     const heading=document.createElement('strong');heading.textContent=(item?.sku||id)+' — '+(item?.title||'Item');
     row.append(heading);
-    for(const [field,label] of [['weightLb','Weight (lb)'],['lengthIn','Length (in)'],['widthIn','Width (in)'],['heightIn','Height (in)']]){
+    for(const [field,label] of [['weightOz','Packed weight (oz)'],['lengthIn','Length (in)'],['widthIn','Width (in)'],['heightIn','Height (in)']]){
      const wrap=document.createElement('label');wrap.textContent=label;
-     const input=document.createElement('input');input.type='number';input.required=true;input.min='0.01';input.max='150';input.step='0.01';input.dataset.parcelField=field;
+     const input=document.createElement('input');input.type='number';input.required=true;input.min=field==='weightOz'?'1':'0.1';input.max=field==='weightOz'?'2400':'120';input.step=field==='weightOz'?'1':'0.1';input.dataset.parcelField=field;
      wrap.append(input);row.append(wrap);
     }
     offerRows.append(row);
    }
    $('#approvedOfferFormTitle').textContent='Shipping package details';
-   $('#approvedOfferIntro').textContent='Enter the real packed dimensions once. SHUKCHIC automatically reuses your saved eBay policies. This first action saves an unpublished offer; a separate review lets you make it live.';
+   $('#approvedOfferIntro').textContent='Enter the real packed weight rounded UP to whole ounces, and the box dimensions, once. SHUKCHIC automatically reuses your saved eBay policies. This first action saves an unpublished offer; a separate review lets you make it live.';
    offerProgress.textContent='Nothing will go live from this step.';
    offerForm.hidden=false;
    offerConfirm.disabled=false;
@@ -180,7 +180,7 @@
   if(Object.values(policies).some(x=>!x)||!merchantLocationKey){offerProgress.textContent='Choose every eBay policy and location.';return;}
   const selected=[...offerRows.querySelectorAll('[data-offer-item]')];
   const parcels=selected.map(row=>({id:row.dataset.offerItem,parcel:Object.fromEntries([...row.querySelectorAll('[data-parcel-field]')].map(input=>[input.dataset.parcelField,Number(input.value)]))}));
-  if(parcels.some(x=>Object.values(x.parcel).some(n=>!Number.isFinite(n)||n<=0))){offerProgress.textContent='Enter the actual weight and dimensions for every selected item.';return;}
+  if(parcels.some(x=>Object.values(x.parcel).some(n=>!Number.isFinite(n)||n<=0)||!Number.isSafeInteger(x.parcel.weightOz))){offerProgress.textContent='Enter actual packed weight rounded UP to whole ounces, plus the package dimensions.';return;}
   // Clicking Create unpublished eBay offer is the explicit in-page authorization; no browser modal.
   offerConfirm.disabled=true;offerSetup.disabled=true;
   let completed=0;

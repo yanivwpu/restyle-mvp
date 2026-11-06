@@ -291,3 +291,16 @@ test('new unpublished eBay offer uses formatted listingDescription without chang
  assert.match(JSON.parse(offer.body).listingDescription,/White with gold accent/);
  x.db.close();
 });
+
+test('new single item packaging sends whole ounces directly to eBay Inventory API',async()=>{
+ const x=fixture();
+ await x.service.prepare({item,draft,photos,settings:{...settings,parcel:{weightOz:2,lengthIn:4,widthIn:2,heightIn:1}}});
+ const put=x.calls.find(c=>c.method==='PUT'&&c.url.includes('/inventory_item/'));
+ assert.deepEqual(JSON.parse(put.body).packageWeightAndSize.weight,{value:2,unit:'OUNCE'});
+ x.db.close();
+});
+test('invalid non-integer ounce weight is rejected before eBay writes',async()=>{
+ const x=fixture();
+ await assert.rejects(x.service.prepare({item,draft,photos,settings:{...settings,parcel:{weightOz:0.5,lengthIn:4,widthIn:2,heightIn:1}}}),e=>e.status===400);
+ assert.equal(x.calls.filter(c=>c.method==='PUT'||c.method==='POST').length,0);x.db.close();
+});
