@@ -251,3 +251,5 @@
 @media(max-width:580px){.approved-batch-row .approved-item{flex-wrap:wrap}.approved-batch-row .approved-status{max-width:none}}
 
 .approved-status.is-blocked{background:#fff0de;color:#975a2e}
+
+.approved-style-fix{grid-column:2;justify-self:start;max-width:fit-content;margin-top:4px}
