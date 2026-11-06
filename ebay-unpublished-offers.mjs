@@ -195,7 +195,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  // validation failure. Never recreate an offer or silently retry publishOffer.
  async function repairStyle({item,style}){
   const cleanStyle=slim(style);
-  if(!cleanStyle||cleanStyle.length>70||/[<>\\r\\n]/.test(cleanStyle))throw fail(400,'Enter a verified item Style (up to 70 characters).');
+  if(!cleanStyle||cleanStyle.length>70||/[<>\r\n]/.test(cleanStyle))throw fail(400,'Enter a verified item Style (up to 70 characters).');
   if(!publishEnabled()||!slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(x=>x.trim()).includes(item.sku))
    throw fail(409,'Style correction is restricted to the controlled listing pilot.');
   const current=db.prepare('SELECT * FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
