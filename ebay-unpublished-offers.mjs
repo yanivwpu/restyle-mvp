@@ -138,8 +138,8 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   const stamp=new Date(clock()).toISOString();
   try{db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,policy_json,source_hash,created_at,updated_at) VALUES (?,?,'PREPARING',?,?,?,?)").run(item.id,item.sku,JSON.stringify({policies:pol,location:chosen[3],parcel}),sourceFingerprint(item,draft,photos),stamp,stamp);}
   catch{throw fail(409,'A preparation already exists for this item or warehouse SKU.');}
-  // All remote actions after this point are non-idempotent or have uncertain outcomes.
-  // Never automatically retry on failure; leave UNKNOWN and require reconciliation.
+  // Read-only verification must never be confused with an uncertain remote write.
+  let remoteWriteStarted=false;
   try{
    // Inventory API offers require an inventory item. Check the item first.
    // The legacy getOffers call could reject unknown SKU 001 with code 25709.
@@ -147,6 +147,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    if(!inventoryCheck.absent)throw fail(409,'An eBay inventory item already exists for this SKU. Reconcile before proceeding.');
    // No Inventory API item means there cannot be an Inventory API offer for this SKU.
    const urls=[];
+   remoteWriteStarted=true;
    for(const photo of photos.slice(0,12))urls.push(await mediaUpload(token,{...photo,submissionId:item.id}));
    const facts=draft.verifiedFacts||{};
    const aspects={...(item.brand?{Brand:[item.brand]}:{}),...(facts.color?{Color:[facts.color]}:{}),...(facts.size?{Size:[facts.size]}:{}),...(facts.material?{Material:[facts.material]}:{}),...(facts.category?{Type:[facts.category]}:{})};
@@ -165,8 +166,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    db.prepare("UPDATE ebay_offer_preparations SET state='PREPARED',offer_id=?,updated_at=?,last_error='' WHERE submission_id=? AND state='PREPARING'").run(offerId,new Date(clock()).toISOString(),item.id);
    return safeResult(item.id);
   }catch(err){
-   const readOnly=String(err.message||'').startsWith('Existing inventory lookup rejected by eBay')||
-     String(err.message||'').startsWith('An eBay inventory item already exists');
+   const readOnly=!remoteWriteStarted;
    db.prepare("UPDATE ebay_offer_preparations SET state=?,updated_at=?,last_error=? WHERE submission_id=? AND state='PREPARING'")
     .run(readOnly?'BLOCKED_READ_ONLY':'UNKNOWN',new Date(clock()).toISOString(),String(err.message||'eBay request failed').slice(0,400),item.id);
    throw err;
