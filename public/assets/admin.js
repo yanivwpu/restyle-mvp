@@ -28,8 +28,20 @@ async function loadEbayStatus(){
   const ai=info.ai||{};
   const aiBtn=$('#ebayAIConnectBtn'),aiStatus=$('#ebayAIStatus');
   if(aiBtn){aiBtn.hidden=!oauth.connected;aiBtn.textContent=ai.connected?'Renew eBay AI permission':'Connect eBay AI';aiStatus.textContent=ai.connected?'AI authorized · preview only':'AI permission not connected';}
-  start.hidden=!oauth.configured;
-  start.textContent=oauth.connected?'Reconnect eBay seller':'Connect eBay seller';
+  start.hidden=!!oauth.connected||!oauth.configured;
+  start.textContent='Connect eBay';
+  const connectionSummary=$('#ebayConnectionSummary'),connectionHelp=$('#ebayConnectionHelp');
+  const publishReconnect=$('#ebayPublishingReconnectBtn');
+  let listingConnected=false;
+  if(oauth.connected){
+   try{
+    const listing=await api('/api/admin/ebay/publishing/status');
+    listingConnected=!!listing.connected;
+   }catch{listingConnected=false;}
+  }
+  if(publishReconnect)publishReconnect.hidden=!oauth.connected||listingConnected;
+  if(connectionSummary)connectionSummary.textContent=oauth.connected&&listingConnected?'Connected · ready for listing preparation':oauth.connected?'Seller connected · listing access needs attention':oauth.configured?'Not connected':'Setup needed';
+  if(connectionHelp)connectionHelp.textContent=oauth.connected&&listingConnected?'SHUKCHIC can use the seller account and access listing preparation. No connection action is needed.':oauth.connected?'Your seller account is connected. Reconnect listing access to continue publishing.':'Connect Samantha’s eBay seller account to begin.';
   $('#ebayOrdersBtn').hidden=!oauth.connected;
   if(oauth.connected&&!ebayResults)loadEbayOrders();
   refresh.hidden=!oauth.connected;
@@ -38,7 +50,7 @@ async function loadEbayStatus(){
   badge.textContent=oauth.connected?'Seller connected':oauth.configured?'Ready to authorize':'Setup incomplete';
   badge.classList.toggle('connected',!!oauth.connected);
   if(oauth.connected){
-   description.textContent='Authorized seller: '+(oauth.sellerUsername||'unknown')+'. Token storage is encrypted; order sync and listing publication are still OFF.';
+   description.textContent='Seller: '+(oauth.sellerUsername||'unknown')+'. Listing publication follows the separately controlled pilot approval.';
    note.textContent='Use Verify token refresh to test renewing access without publishing or importing anything. Reauthorization is available using Connect.';
   }else if(oauth.configured){
    description.textContent='Production API credentials are configured. To connect the correct seller account, select Connect eBay seller here in the admin—not Test Sign-In in the developer portal.';
@@ -165,6 +177,15 @@ $('#ebayConnectBtn')?.addEventListener('click',async()=>{
  const btn=$('#ebayConnectBtn');btn.disabled=true;
  try{
   const result=await api('/api/admin/ebay/oauth/start',{method:'POST',body:'{}'});
+  const u=new URL(result.authorizationUrl);
+  if(u.origin!=='https://auth.ebay.com')throw Error('Invalid eBay authorization destination.');
+  window.location.assign(u.toString());
+ }catch(e){alert(e.message);btn.disabled=false;}
+});
+$('#ebayPublishingReconnectBtn')?.addEventListener('click',async()=>{
+ const btn=$('#ebayPublishingReconnectBtn');btn.disabled=true;
+ try{
+  const result=await api('/api/admin/ebay/oauth/publishing-start',{method:'POST',body:'{}'});
   const u=new URL(result.authorizationUrl);
   if(u.origin!=='https://auth.ebay.com')throw Error('Invalid eBay authorization destination.');
   window.location.assign(u.toString());

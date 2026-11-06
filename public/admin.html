@@ -1,18 +1,27 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261105-preflight-feedback"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261104-approved-queue" defer></script><script src="/assets/approved-listings.js?v=20261105-preflight-feedback" defer></script></head><body class="admin-body">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261106-clean-ebay"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261106-clean-ebay" defer></script><script src="/assets/approved-listings.js?v=20261106-clean-ebay" defer></script></head><body class="admin-body">
 <header class="admin-header"><a href="/" class="brand"><img src="/assets/shukchic-logo.svg?v=20261027-black80" class="brand-logo" alt="SHUKCHIC Designer Resale"></a><span class="admin-heading">Review workspace <span class="pilot-tag">PRIVATE PILOT</span></span><button id="logoutBtn" class="small-button" hidden>Sign out</button></header>
 <main class="admin-main"><section id="loginView" class="login-box"><span class="eyebrow">STAFF ACCESS</span><h1>Welcome back.</h1><p>Sign in to review submitted items, photos and warehouse status.</p><form id="loginForm"><label>Admin password<input type="password" name="password" autocomplete="current-password" required placeholder="Enter password"></label><div id="loginError" class="admin-error" hidden></div><button type="submit" class="btn btn-primary">Sign in →</button></form><p class="hint">Enter your SHUKCHIC admin password. To set or reset it, update ADMIN_PASSWORD in Railway → SHUKCHIC MVP Staging → restyle-web → Variables.</p></section>
 <section id="dashboard" hidden><div class="dash-title"><div><span class="eyebrow">CONSIGNMENT OPERATIONS</span><h1>Incoming items <span id="count"></span></h1><p>Review submissions before inviting anyone to ship merchandise.</p></div>
- <details class="ebay-sales-settings ebay-global-settings"><summary>eBay connection settings</summary>
-  <small id="ebaySyncNote">Seller authorization tools; order sync and listing publication are off.</small>
-  <div class="ebay-sync-actions">
-   <button type="button" class="small-button" id="ebayAIConnectBtn">Connect eBay AI</button><span id="ebayAIStatus" class="detail-meta">AI not connected</span><button type="button" class="small-button" id="ebayProbeBtn">Check eBay API</button>
-   <button type="button" class="small-button" id="ebayConnectBtn" hidden>Connect eBay seller</button>
-   <button type="button" class="small-button" id="ebayRefreshBtn" hidden>Verify token refresh</button>
-   <button type="button" class="small-button" id="ebayDisconnectBtn" hidden>Disconnect</button>
-   <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">eBay developer settings</a>
+ <details class="ebay-sales-settings ebay-global-settings" id="ebayConnectionSettings">
+  <summary>eBay connection <span id="ebayConnectionSummary" class="ebay-connection-summary">Checking…</span></summary>
+  <div class="ebay-connection-simple">
+   <p id="ebayConnectionHelp">SHUKCHIC handles eBay authorization automatically. Reconnect only if access needs attention.</p>
+   <button type="button" class="small-button" id="ebayConnectBtn" hidden>Reconnect eBay</button>
+   <button type="button" class="small-button" id="ebayPublishingReconnectBtn" hidden>Reconnect listing access</button>
   </div>
-  <p id="ebayProbeResult" role="status" aria-live="polite" hidden></p>
-  <details class="ebay-demo-box" id="ebayDemo"><summary>Order matching demo</summary><p class="ebay-demo-result" id="ebayDemoResult">This preview uses sample data.</p></details>
+  <details class="ebay-diagnostics">
+   <summary>Advanced diagnostics</summary>
+   <small id="ebaySyncNote">Connection troubleshooting tools for administrators.</small>
+   <div class="ebay-sync-actions">
+    <button type="button" class="small-button" id="ebayAIConnectBtn">Connect eBay AI</button><span id="ebayAIStatus" class="detail-meta">AI not connected</span>
+    <button type="button" class="small-button" id="ebayProbeBtn">Check eBay API</button>
+    <button type="button" class="small-button" id="ebayRefreshBtn" hidden>Verify token refresh</button>
+    <button type="button" class="small-button" id="ebayDisconnectBtn" hidden>Disconnect</button>
+    <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">eBay developer settings</a>
+   </div>
+   <p id="ebayProbeResult" role="status" aria-live="polite" hidden></p>
+   <details class="ebay-demo-box" id="ebayDemo"><summary>Order matching demo</summary><p class="ebay-demo-result" id="ebayDemoResult">This preview uses sample data.</p></details>
+  </details>
  </details>
  </div><div class="stats" id="stats"></div>
 <section id="ebaySyncCard" class="ebay-sync-card" aria-label="eBay Sales">
@@ -32,21 +41,32 @@
 <div class="consignment-tabs"><button type="button" class="small-button" id="showIncomingItems">Incoming & warehouse</button><button type="button" class="small-button" id="showApprovedListings">Listing Queue <span id="approvedListingsCount"></span></button></div>
 <section id="approvedListings" hidden aria-label="Approved listings">
  <div class="approved-section-heading"><div><h2>Listing Queue</h2><p id="approvedListingsStatus" role="status">Reviewed listings and drafts awaiting approval.</p></div><div class="approved-section-actions"><button type="button" id="approvedListingsReload" class="small-button">Refresh</button><button type="button" id="approvedListingsClose" class="small-button" aria-label="Close listing queue">Close</button></div></div>
- <div class="approved-batch-toolbar"><span id="approvedBatchSelected">0 selected (maximum 25)</span><button type="button" class="small-button" id="approvedBatchSelectReviewed">Select reviewed</button><button type="button" class="small-button" id="approvedBatchClear">Clear</button><button type="button" class="small-button" id="approvedBatchPreflight" disabled>Check selected for eBay</button><button type="button" class="small-button" id="approvedBatchOfferSetup" disabled>Prepare unpublished offers</button><button type="button" class="small-button" id="approvedBatchPublish" disabled>Publish prepared to eBay</button></div>
- <p class="detail-meta" id="approvedBatchResults" role="status">Select reviewed items to validate a batch. Checking does not create offers or publish listings.</p>
+ <div class="approved-batch-toolbar">
+  <span id="approvedBatchSelected">0 selected (maximum 25)</span>
+  <button type="button" class="small-button" id="approvedBatchSelectReviewed">Select reviewed</button>
+  <button type="button" class="small-button" id="approvedBatchClear">Clear</button>
+  <button type="button" class="small-button" id="approvedBatchOfferSetup" disabled>Publish selected to eBay</button>
+  <button type="button" class="small-button" id="approvedBatchPreflight" hidden disabled>Check selected for eBay</button>
+  <button type="button" class="small-button" id="approvedBatchPublish" hidden disabled>Publish prepared to eBay</button>
+ </div>
+ <div class="detail-meta" id="approvedBatchResults" role="status">Select a staff-reviewed listing and choose Publish selected to eBay.</div>
  <div id="approvedBatchOfferForm" class="approved-offer-form" hidden>
-  <h3>Prepare unpublished eBay offers</h3><p class="detail-meta">Choose eBay policies and a warehouse location. Enter each packed item's actual weight and dimensions. This creates eBay inventory and unpublished offers only; buyers cannot purchase them yet.</p>
-  <div class="approved-offer-settings">
-   <label>Payment policy<select id="approvedOfferPayment"></select></label>
-   <label>Shipping policy<select id="approvedOfferShipping"></select></label>
-   <label>Return policy<select id="approvedOfferReturns"></select></label>
-   <label>eBay location<select id="approvedOfferLocation"></select></label>
-  </div>
+  <h3 id="approvedOfferFormTitle">Ready to publish</h3>
+  <p class="detail-meta" id="approvedOfferIntro">SHUKCHIC uses your existing eBay policies. Enter the actual packed measurements if they are not yet saved.</p>
+  <div id="approvedOfferDefaultsSummary" class="detail-meta"></div>
+  <details class="approved-offer-advanced" id="approvedOfferAdvanced">
+   <summary>Change eBay shipping, payment, returns or location</summary>
+   <div class="approved-offer-settings">
+    <label>Payment policy<select id="approvedOfferPayment"></select></label>
+    <label>Shipping policy<select id="approvedOfferShipping"></select></label>
+    <label>Return policy<select id="approvedOfferReturns"></select></label>
+    <label>eBay location<select id="approvedOfferLocation"></select></label>
+   </div>
+  </details>
   <div id="approvedOfferParcelRows"></div>
-  <div class="approved-section-actions"><button type="button" class="small-button" id="approvedOfferConfirm">Create selected unpublished offers</button><button type="button" class="small-button" id="approvedOfferCancel">Cancel</button></div>
+  <div class="approved-section-actions"><button type="button" class="small-button" id="approvedOfferConfirm">Continue</button><button type="button" class="small-button" id="approvedOfferCancel">Cancel</button></div>
   <p class="detail-meta" id="approvedOfferProgress" role="status"></p>
  </div>
-
  <div id="approvedListingsGrid" class="approved-grid"></div><div id="approvedListingPreview" class="approved-preview" hidden></div>
 </section>
 <div id="dashboardWorkArea"><div class="dashboard-grid"><section class="item-panel"><div class="panel-toolbar"><input id="search" aria-label="Search submissions" placeholder="Search brand, customer, reference…"><select id="filter" aria-label="Filter status"><option value="">All statuses</option><option>SUBMITTED</option><option>NEEDS_INFO</option><option>ACCEPTED</option><option>AWAITING_SHIPMENT</option><option>RECEIVED</option><option>READY_TO_LIST</option><option>LISTED</option><option>SOLD</option><option>SHIPPED</option><option>PAID</option><option>REJECTED</option></select></div><div id="itemList" class="item-list"></div></section><section class="detail-panel" id="detailPanel"><div class="empty-state"><div>◎</div><h2>Select a submission</h2><p>Choose an item from the review queue to see its details and update its status.</p></div></section></div></div></section></main>
