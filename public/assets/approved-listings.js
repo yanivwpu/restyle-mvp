@@ -228,7 +228,31 @@
      button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.ebay_offer_state==='UNKNOWN'||item.ebay_offer_state==='BLOCKED_READ_ONLY'?'is-blocked':item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.ebay_offer_state==='LIVE'?'Live on eBay':item.ebay_offer_state==='PREPARED'?'Unpublished offer ready':item.ebay_offer_state==='UNKNOWN'?'eBay status needs review':item.ebay_offer_state==='BLOCKED_READ_ONLY'?'eBay validation blocked':item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
      button.addEventListener('click',()=>show(item.id));
      const feedback=document.createElement('small');feedback.className='approved-batch-feedback';feedback.dataset.batchResult=item.id;
-     wrapper.append(checkbox,button,feedback);grid.append(wrapper);
+     if(item.ebay_offer_state==='UNKNOWN'&&
+       /Live eBay publishing rejected by eBay \(HTTP 400; codes 25002\)/.test(item.ebay_offer_error||'')&&
+       /item specific Style is missing/i.test(item.ebay_offer_error||'')){
+      const fix=document.createElement('button');fix.type='button';fix.className='small-button approved-style-fix';
+      fix.textContent='Add required Style';
+      fix.addEventListener('click',async()=>{
+       const value=window.prompt('eBay requires a Style for this listing. Confirm the verified style:',item.sku==='001'?'Ear Cuff':'');
+       if(value===null)return;
+       const style=value.trim();
+       if(!style||style.length>70){batchResult.textContent='Enter a verified Style (up to 70 characters).';return;}
+       if(!window.confirm('Save Style "'+style+'" to the existing unpublished eBay inventory item? This will NOT publish it.'))return;
+       fix.disabled=true;batchResult.textContent='Checking the existing eBay offer and updating Style…';
+       try{
+        const response=await fetch('/api/admin/ebay/offers/fix-style/'+encodeURIComponent(item.id),{
+         method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({style})
+        });
+        const result=await response.json();
+        if(!response.ok)throw Error(result.error||'Style update failed.');
+        batchSelected.clear();await load();
+        batchResult.textContent='Style saved on the existing eBay inventory item. Offer is ready for Samantha’s final publishing confirmation.';
+       }catch(err){batchResult.textContent='Style correction stopped: '+err.message+' Do not retry until the eBay state has been verified.';fix.disabled=false;}
+      });
+      wrapper.append(checkbox,button,fix,feedback);
+     }else wrapper.append(checkbox,button,feedback);
+     grid.append(wrapper);
     
     }
     updateBatchControls();
