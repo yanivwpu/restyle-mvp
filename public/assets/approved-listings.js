@@ -254,11 +254,15 @@
       const fixWeight=document.createElement('button');fixWeight.type='button';
       fixWeight.className='small-button approved-style-fix';fixWeight.textContent='Correct shipping weight';
       fixWeight.addEventListener('click',async()=>{
-       const entered=window.prompt('Actual packed shipping weight in whole ounces (round UP, including packaging). Do not guess:');
-       if(entered===null)return;
-       const oz=Number(entered);
-       if(!Number.isSafeInteger(oz)||oz<1||oz>2400){batchResult.textContent='Enter a verified whole-ounce weight from 1 to 2400.';return;}
-       if(!window.confirm('Update the existing unpublished eBay inventory item to '+oz+' oz? This does NOT publish it.'))return;
+       if(!fixWeight.dataset.ready){
+        const field=document.createElement('input');field.type='number';field.min='1';field.max='2400';field.step='1';
+        field.placeholder='Packed weight (oz)';field.setAttribute('aria-label','Packed shipping weight in whole ounces');
+        field.className='approved-inline-correction';fixWeight.before(field);
+        fixWeight.dataset.ready='1';fixWeight.textContent='Save shipping weight';field.focus();return;
+       }
+       const field=wrapper.querySelector('.approved-inline-correction');
+       const oz=Number(field?.value);
+       if(!field?.value||!Number.isSafeInteger(oz)||oz<1||oz>2400){batchResult.textContent='Enter the real packed weight rounded up to a whole ounce (1–2400 oz).';return;}
        fixWeight.disabled=true;batchResult.textContent='Verifying existing eBay offer and correcting the package weight…';
        try{
         const res=await fetch('/api/admin/ebay/offers/fix-weight/'+encodeURIComponent(item.id),{
@@ -275,11 +279,14 @@
       const fix=document.createElement('button');fix.type='button';fix.className='small-button approved-style-fix';
       fix.textContent='Add required Style';
       fix.addEventListener('click',async()=>{
-       const value=window.prompt('eBay requires a Style for this listing. Confirm the verified style:',item.sku==='001'?'Ear Cuff':'');
-       if(value===null)return;
-       const style=value.trim();
-       if(!style||style.length>70){batchResult.textContent='Enter a verified Style (up to 70 characters).';return;}
-       if(!window.confirm('Save Style "'+style+'" to the existing unpublished eBay inventory item? This will NOT publish it.'))return;
+       if(!fix.dataset.ready){
+        const input=document.createElement('input');input.type='text';input.maxLength=70;
+        input.placeholder='Verified Style';input.setAttribute('aria-label','Verified eBay Style');
+        input.className='approved-inline-correction';fix.before(input);
+        fix.dataset.ready='1';fix.textContent='Save Style';input.focus();return;
+       }
+       const style=(wrapper.querySelector('.approved-inline-correction')?.value||'').trim();
+       if(!style||style.length>70){batchResult.textContent='Enter Samantha’s verified Style (up to 70 characters).';return;}
        fix.disabled=true;batchResult.textContent='Checking the existing eBay offer and updating Style…';
        try{
         const response=await fetch('/api/admin/ebay/offers/fix-style/'+encodeURIComponent(item.id),{
