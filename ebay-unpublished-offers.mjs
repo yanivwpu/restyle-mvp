@@ -12,6 +12,21 @@ const sourceFingerprint=(item,draft,photos)=>crypto.createHash('sha256').update(
  draftStatus:draft.status,title:draft.title,description:draft.description,price:draft.price_cents,category:draft.category_id,
  facts:draft.verifiedFacts,aspects:draft.aspects,photos:photos.map(x=>[x.source,x.id])
 })).digest('hex');
+const escapeListingHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Format only staff-approved content. No AI-written claims or external scripts.
+// eBay accepts modest, mobile-friendly HTML in listingDescription.
+export function formatEbayDescription(description){
+ const lines=String(description??'').replace(/\r\n?/g,'\n').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+ if(!lines.length)return '';
+ const parts=lines.map((line,i)=>{
+  const value=escapeListingHtml(line);
+  if(i===0&&lines.length>1&&line.length<=100)return '<p style="font-size:18px;font-weight:bold;margin:0 0 14px">'+value+'</p>';
+  if(/^(Condition|Color|Size|Material|Measurements|Style):\s*/i.test(line))
+   return '<p style="margin:0 0 8px">'+value+'</p>';
+  return '<p style="margin:14px 0;line-height:1.6">'+value+'</p>';
+ });
+ return '<div style="font-family:Arial,sans-serif;font-size:14px;color:#262626;max-width:680px;line-height:1.6">'+parts.join('')+'</div>';
+}
 const CONDITIONS={'New with tags':'NEW','New without tags':'NEW_OTHER','Like new':'LIKE_NEW','Excellent':'USED_EXCELLENT','Good':'USED_GOOD','Fair':'USED_ACCEPTABLE'};
 export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,clock=()=>Date.now(),enabled=()=>process.env.SHUKCHIC_EBAY_PREPARE_ENABLED==='true',publishEnabled=()=>process.env.SHUKCHIC_EBAY_LIVE_PUBLISH_ENABLED==='true',prepareAllowed=(sku)=>{const allow=slim(process.env.SHUKCHIC_EBAY_PREPARE_ALLOWLIST||'').split(',').map(x=>x.trim());return allow.includes(sku)||allow.includes('*');}}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -183,7 +198,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    const saved=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku),'PUT',inventoryBody);
    if(!saved.ok)throw eBayError(saved,'Inventory item creation');
    const offer={sku:item.sku,marketplaceId:'EBAY_US',format:'FIXED_PRICE',availableQuantity:1,categoryId:String(draft.category_id),
-    merchantLocationKey:chosen[3],listingDuration:'GTC',listingDescription:draft.description,
+    merchantLocationKey:chosen[3],listingDuration:'GTC',listingDescription:formatEbayDescription(draft.description),
     listingPolicies:{paymentPolicyId:chosen[0],fulfillmentPolicyId:chosen[1],returnPolicyId:chosen[2]},
     pricingSummary:{price:{value:(draft.price_cents/100).toFixed(2),currency:'USD'}}};
    const created=await api(token,'/sell/inventory/v1/offer','POST',offer);
