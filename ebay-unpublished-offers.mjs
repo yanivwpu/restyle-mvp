@@ -160,8 +160,13 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   if(!digits(pol.paymentPolicyId)||!digits(pol.fulfillmentPolicyId)||!digits(pol.returnPolicyId))throw fail(400,'Select all three actual eBay policy IDs.');
   if(!/^[A-Za-z0-9._-]{1,50}$/.test(slim(cfg.merchantLocationKey)))throw fail(400,'Select an existing eBay inventory location.');
   if(!['NEW','NEW_OTHER','LIKE_NEW','USED_EXCELLENT','USED_GOOD','USED_ACCEPTABLE'].includes(CONDITIONS[item.condition]))throw fail(409,'Unsupported verified item condition. Review eBay category rules.');
-  const length=Number(parcel.lengthIn),width=Number(parcel.widthIn),height=Number(parcel.heightIn),weight=Number(parcel.weightLb);
-  if(![length,width,height].every(x=>finite(x,0.1,120))||!finite(weight,0.01,150))throw fail(400,'Enter verified package length, width, height (inches) and shipping weight (pounds) for calculated shipping.');
+  const length=Number(parcel.lengthIn),width=Number(parcel.widthIn),height=Number(parcel.heightIn);
+  // New UI uses whole ounces. Older clients supplying pounds are rounded UP,
+  // never truncated, and retain compatibility with previously tested input.
+  const weightOz=parcel.weightOz==null?Math.ceil(Number(parcel.weightLb)*16):Number(parcel.weightOz);
+  if(![length,width,height].every(x=>finite(x,0.1,120))||
+     !Number.isSafeInteger(weightOz)||weightOz<1||weightOz>2400)
+   throw fail(400,'Enter actual packed weight rounded UP to a whole ounce (1–2400 oz), and verified package dimensions in inches.');
   const token=await oauth.getPublishingToken();
   const valid=await availablePolicies(token);
   const chosen=[slim(pol.paymentPolicyId),slim(pol.fulfillmentPolicyId),slim(pol.returnPolicyId),slim(cfg.merchantLocationKey)];
@@ -194,7 +199,7 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    }
    const inventoryBody={availability:{shipToLocationAvailability:{quantity:1}},condition:CONDITIONS[item.condition],
     product:{title:draft.title,description:draft.description,aspects,imageUrls:urls},
-    packageWeightAndSize:{dimensions:{length,width,height,unit:'INCH'},weight:{value:weight,unit:'POUND'}}};
+    packageWeightAndSize:{dimensions:{length,width,height,unit:'INCH'},weight:{value:weightOz,unit:'OUNCE'}}};
    const saved=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku),'PUT',inventoryBody);
    if(!saved.ok)throw eBayError(saved,'Inventory item creation');
    const offer={sku:item.sku,marketplaceId:'EBAY_US',format:'FIXED_PRICE',availableQuantity:1,categoryId:String(draft.category_id),
