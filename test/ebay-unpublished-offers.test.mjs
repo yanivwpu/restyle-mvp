@@ -8,7 +8,7 @@ const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'W
 const photos=[{id:'12345678-1234-1234-1234-123456789abc',source:'warehouse'}];
 const settings={merchantLocationKey:'FL-WAREHOUSE',policies:{paymentPolicyId:'11',fulfillmentPolicyId:'22',returnPolicyId:'33'},parcel:{weightLb:0.3,lengthIn:6,widthIn:4,heightIn:3}};
 function response(status,data={}){return {status,ok:status>=200&&status<300,json:async()=>data,headers:{get:()=>null}};}
-function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false}={}){
+function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,existingInventory=false,inventoryReadError=false}={}){
  const db=new DatabaseSync(':memory:');const calls=[];
  const fetcher=async(url,opt={})=>{
   calls.push({url,method:opt.method||'GET'});
@@ -17,7 +17,7 @@ function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=
   if(url.includes('return_policy'))return response(200,{returnPolicies:[{returnPolicyId:'33'}]});
   if(url.includes('/location?'))return response(200,{locations:[{merchantLocationKey:'FL-WAREHOUSE'}]});
   if(url.includes('/offer?sku='))return response(200,{offers:[]});
-  if(url.includes('/inventory_item/')&&opt.method==='GET')return response(404);
+  if(url.includes('/inventory_item/')&&opt.method==='GET')return inventoryReadError?response(400,{errors:[{errorId:25709,message:'Invalid value for SKU'}]}):existingInventory?response(200,{sku:'001'}):response(404);
   if(url.includes('/create_image_from_file'))return response(201,{imageUrl:'https://i.ebayimg.com/images/g/test/s-l500.jpg'});
   if(url.includes('/inventory_item/')&&opt.method==='PUT')return response(204);
   if(url.endsWith('/offer')&&opt.method==='POST')return failOffer?response(502,{errors:[{errorId:25101}]}):response(201,{offerId:'998877'});
@@ -61,6 +61,37 @@ test('staff approved wording is not rejected; missing parcel dimensions still bl
  assert.equal(result.state,'PREPARED');x.db.close();
 });
 
+test('missing inventory does not query getOffers with an unknown SKU',async()=>{
+ const x=fixture();const result=await x.service.prepare({item,draft,photos,settings});
+ assert.equal(result.state,'PREPARED');
+ assert.equal(x.calls.some(c=>c.url.includes('/offer?sku=')),false);
+ assert.equal(x.calls.some(c=>c.url.includes('/inventory_item/001')&&c.method==='GET'),true);
+ x.db.close();
+});
+test('a known prior 25709 offer lookup failure can be recovered without duplicate writes',async()=>{
+ const x=fixture();
+ const now=new Date().toISOString();
+ x.db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,last_error,created_at,updated_at) VALUES (?,?,'UNKNOWN',?,?,?)")
+ .run(item.id,item.sku,'Existing offer lookup rejected by eBay (HTTP 400; codes 25709). Check the account and listing settings.',now,now);
+ const result=await x.service.prepare({item,draft,photos,settings});
+ assert.equal(result.state,'PREPARED');
+ assert.equal(x.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/offer')).length,1);
+ x.db.close();
+});
+test('existing inventory blocks write and remains quarantined',async()=>{
+ const x=fixture({existingInventory:true});
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===409);
+ assert.equal(x.service.get(item.id).state,'BLOCKED_READ_ONLY');
+ assert.equal(x.calls.filter(c=>c.method==='PUT').length,0);
+ x.db.close();
+});
+test('unexpected inventory lookup validation error blocks all writes',async()=>{
+ const x=fixture({inventoryReadError:true});
+ await assert.rejects(x.service.prepare({item,draft,photos,settings}),e=>e.status===502);
+ assert.equal(x.service.get(item.id).state,'BLOCKED_READ_ONLY');
+ assert.equal(x.calls.filter(c=>c.method==='PUT'||c.method==='POST').length,0);
+ x.db.close();
+});
 test('live publication is disabled by default even after offer preparation',async()=>{
  const x=fixture();await x.service.prepare({item,draft,photos,settings});
  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===409);
