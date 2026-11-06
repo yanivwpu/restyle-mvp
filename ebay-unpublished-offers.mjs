@@ -72,6 +72,16 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   if(!prepareAllowed(item.sku))throw fail(409,'This SKU is not authorized for the controlled unpublished-offer preparation pilot.');
   const checked=evaluateListingForBatch({item,draft,gates:issues,photos,duplicateSku:duplicates});
   if(!checked.localReady)throw fail(409,'Listing not locally ready: '+checked.blockers.join('; '));
+  // Recover only the prior known read-only getOffers failure (25709).
+  // No remote mutations occurred before that error in the previous implementation.
+  const prior=db.prepare('SELECT state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
+  if(prior){
+   const knownPreWrite=prior.state==='UNKNOWN'&&!prior.offer_id&&!prior.listing_id&&
+    /^Existing offer lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
+   if(knownPreWrite){
+    db.prepare("DELETE FROM ebay_offer_preparations WHERE submission_id=? AND state='UNKNOWN' AND offer_id IS NULL AND listing_id IS NULL AND last_error=?").run(item.id,prior.last_error);
+   }else throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
+  }
   if(get(item.id))throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
   const cfg=settings||{},pol=cfg.policies||{},parcel=cfg.parcel||{};
   if(!digits(pol.paymentPolicyId)||!digits(pol.fulfillmentPolicyId)||!digits(pol.returnPolicyId))throw fail(400,'Select all three actual eBay policy IDs.');
@@ -89,11 +99,15 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   // All remote actions after this point are non-idempotent or have uncertain outcomes.
   // Never automatically retry on failure; leave UNKNOWN and require reconciliation.
   try{
-   const existing=await api(token,'/sell/inventory/v1/offer?sku='+encodeURIComponent(item.sku));
-   if(!existing.ok)throw eBayError(existing,'Existing offer lookup');
-   if((existing.data?.offers||[]).length)throw fail(409,'An offer for this SKU already exists on eBay. Reconcile before proceeding.');
+   // Inventory API offers require an inventory item. Check the item first.
+   // The legacy getOffers call could reject unknown SKU 001 with code 25709.
    const inventory=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku));
-   if(inventory.status!==404)throw inventory.ok?fail(409,'An eBay inventory item already exists for this SKU.'):eBayError(inventory,'Existing inventory lookup');
+   const notFound=inventory.status===404||
+    (inventory.status===400&&Array.isArray(inventory.data?.errors)&&
+      inventory.data.errors.some(e=>[25702,25710].includes(Number(e.errorId))));
+   if(inventory.ok)throw fail(409,'An eBay inventory item already exists for this SKU. Reconcile before proceeding.');
+   if(!notFound)throw eBayError(inventory,'Existing inventory lookup');
+   // No Inventory API item means there cannot be an Inventory API offer for this SKU.
    const urls=[];
    for(const photo of photos.slice(0,12))urls.push(await mediaUpload(token,{...photo,submissionId:item.id}));
    const facts=draft.verifiedFacts||{};
@@ -113,7 +127,10 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    db.prepare("UPDATE ebay_offer_preparations SET state='PREPARED',offer_id=?,updated_at=?,last_error='' WHERE submission_id=? AND state='PREPARING'").run(offerId,new Date(clock()).toISOString(),item.id);
    return safeResult(item.id);
   }catch(err){
-   db.prepare("UPDATE ebay_offer_preparations SET state='UNKNOWN',updated_at=?,last_error=? WHERE submission_id=? AND state='PREPARING'").run(new Date(clock()).toISOString(),String(err.message||'eBay request failed').slice(0,400),item.id);
+   const readOnly=String(err.message||'').startsWith('Existing inventory lookup rejected by eBay')||
+     String(err.message||'').startsWith('An eBay inventory item already exists');
+   db.prepare("UPDATE ebay_offer_preparations SET state=?,updated_at=?,last_error=? WHERE submission_id=? AND state='PREPARING'")
+    .run(readOnly?'BLOCKED_READ_ONLY':'UNKNOWN',new Date(clock()).toISOString(),String(err.message||'eBay request failed').slice(0,400),item.id);
    throw err;
   }
  }
