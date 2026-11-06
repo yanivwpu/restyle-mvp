@@ -468,7 +468,7 @@ async function handle(req,res){
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
   const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
-  return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null};}),publishingEnabled:false});
+  return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null,style_fix_available:unpublishedOffers.get(r.id).styleFixAvailable===true};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
  if(req.method==='GET'&&previewRoute){

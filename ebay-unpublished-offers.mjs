@@ -31,9 +31,12 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  if(recoveredLanguage.changes>0)console.info('Recovered '+recoveredLanguage.changes+' eBay inventory Accept-Language read-only failure(s).');
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
+ // Match the stored eBay validation failure without depending on exact text wording.
+ // Errors are truncated in persistence and may include different parameter formatting.
  const styleFailure=x=>x&&x.state==='UNKNOWN'&&!!x.offer_id&&!x.listing_id&&
-   /^Live eBay publishing rejected by eBay \(HTTP 400; codes 25002\)/.test(x.last_error||'')&&
-   /item specific Style is missing/i.test(x.last_error||'');
+   /Live eBay publishing rejected by eBay/i.test(x.last_error||'')&&
+   /codes 25002\b/.test(x.last_error||'')&&
+   /\bStyle\b/i.test(x.last_error||'');
  function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',styleFixAvailable:!!styleFailure(x),livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false,styleFixAvailable:false};}
  async function call(url,options){
   let response;

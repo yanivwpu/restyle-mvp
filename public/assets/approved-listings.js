@@ -228,9 +228,11 @@
      button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.ebay_offer_state==='UNKNOWN'||item.ebay_offer_state==='BLOCKED_READ_ONLY'?'is-blocked':item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.ebay_offer_state==='LIVE'?'Live on eBay':item.ebay_offer_state==='PREPARED'?'Unpublished offer ready':item.ebay_offer_state==='UNKNOWN'?'eBay status needs review':item.ebay_offer_state==='BLOCKED_READ_ONLY'?'eBay validation blocked':item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
      button.addEventListener('click',()=>show(item.id));
      const feedback=document.createElement('small');feedback.className='approved-batch-feedback';feedback.dataset.batchResult=item.id;
-     if(item.ebay_offer_state==='UNKNOWN'&&
-       /Live eBay publishing rejected by eBay \(HTTP 400; codes 25002\)/.test(item.ebay_offer_error||'')&&
-       /item specific Style is missing/i.test(item.ebay_offer_error||'')){
+     if(item.ebay_offer_state==='UNKNOWN'){
+      feedback.textContent=item.style_fix_available===true?'eBay requires a Style item specific. Confirm the value below to repair the existing unpublished offer.':
+       'Publication needs reconciliation. SHUKCHIC will not retry until the saved eBay status is verified.';
+     }
+     if(item.ebay_offer_state==='UNKNOWN'&&item.style_fix_available===true){
       const fix=document.createElement('button');fix.type='button';fix.className='small-button approved-style-fix';
       fix.textContent='Add required Style';
       fix.addEventListener('click',async()=>{
