@@ -74,8 +74,12 @@
    if(statuses.some(x=>x.state==='UNKNOWN'||x.state==='LIVE'||x.state==='PREPARING'||x.state==='PUBLISHING'))
     throw Error('Selected item has an existing or uncertain eBay state. Review its status before continuing.');
    if(statuses.every(x=>x.state==='PREPARED')){
-    offerSetup.disabled=false;
-    batchPublish.click();
+    if(statuses.every(x=>x.livePublishAvailable)){
+     offerSetup.disabled=false;
+     batchPublish.click();
+    }else{
+     batchResult.textContent='Unpublished eBay offers are ready. Live publishing is not yet enabled for this pilot; no action is needed from Samantha.';
+    }
     return;
    }
    if(statuses.some(x=>x.state==='PREPARED'))
