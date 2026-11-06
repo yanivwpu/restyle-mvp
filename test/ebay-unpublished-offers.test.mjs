@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {createEbayUnpublishedOffers} from '../ebay-unpublished-offers.mjs';
+import {createEbayUnpublishedOffers,formatEbayDescription} from '../ebay-unpublished-offers.mjs';
 
 const item={id:'RS-A1B2C3D4E5',sku:'001',bin_location:'A1',received_verified:1,brand:'Aurelie Bidermann',condition:'New without tags'};
 const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'White with gold accent, new without tags.',price_cents:4500,category_id:'50647',verifiedFacts:{color:'White and Gold',category:'Ear Cuff'}};
@@ -272,4 +272,22 @@ test('ambiguous errors cannot initiate weight repair',async()=>{
   assert.equal(x.calls.filter(c=>c.method==='PUT').length,1);
   x.db.close();
  }finally{if(old===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=old;}
+});
+
+test('readable eBay HTML uses approved paragraphs and escapes user content',()=>{
+ const html=formatEbayDescription("Aurelie Bidermann Ear Cuff\nCondition: New without tags\nColor: White with gold accent\nDesigner <piece> & details.");
+ assert.match(html,/<p style="font-size:18px/);
+ assert.match(html,/Condition: New without tags/);
+ assert.match(html,/Designer &lt;piece&gt; &amp; details/);
+ assert.doesNotMatch(html,/<piece>/);
+ assert.doesNotMatch(html,/<script/);
+});
+test('new unpublished eBay offer uses formatted listingDescription without changing product facts',async()=>{
+ const x=fixture();
+ await x.service.prepare({item,draft:{...draft,description:'Aurelie Bidermann Ear Cuff\nCondition: New without tags\nWhite with gold accent.'},photos,settings});
+ const offer=x.calls.find(c=>c.method==='POST'&&c.url.endsWith('/offer'));
+ assert.ok(offer);
+ assert.match(JSON.parse(offer.body).listingDescription,/<p /);
+ assert.match(JSON.parse(offer.body).listingDescription,/White with gold accent/);
+ x.db.close();
 });

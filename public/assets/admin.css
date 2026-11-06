@@ -253,3 +253,13 @@
 .approved-status.is-blocked{background:#fff0de;color:#975a2e}
 
 .approved-style-fix{grid-column:2;justify-self:start;max-width:fit-content;margin-top:4px}
+
+/* Single listing workflow: no multi-select clutter or native browser confirmation UI. */
+.approved-batch-toolbar[hidden],.approved-live-review[hidden]{display:none!important}
+.approved-batch-row>input[data-batch-id]{display:none}
+.approved-live-review{border:1px solid #dcbfa8;background:#fffaf5;border-radius:12px;padding:22px;margin:16px 0}
+.approved-live-review h3{margin:0 0 10px}
+.approved-live-review .btn{min-width:175px}
+.approved-inline-correction{min-width:140px;max-width:240px;padding:11px 12px;border:1px solid #d9c9ba;border-radius:8px;grid-column:2}
+.approved-preview-description{white-space:pre-line;line-height:1.7}
+.approved-batch-row .approved-item{cursor:pointer}
