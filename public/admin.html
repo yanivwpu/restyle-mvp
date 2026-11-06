@@ -1,18 +1,27 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261105-simplified-publish"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261104-approved-queue" defer></script><script src="/assets/approved-listings.js?v=20261105-simplified-publish" defer></script></head><body class="admin-body">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261106-clean-ebay"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261106-clean-ebay" defer></script><script src="/assets/approved-listings.js?v=20261106-clean-ebay" defer></script></head><body class="admin-body">
 <header class="admin-header"><a href="/" class="brand"><img src="/assets/shukchic-logo.svg?v=20261027-black80" class="brand-logo" alt="SHUKCHIC Designer Resale"></a><span class="admin-heading">Review workspace <span class="pilot-tag">PRIVATE PILOT</span></span><button id="logoutBtn" class="small-button" hidden>Sign out</button></header>
 <main class="admin-main"><section id="loginView" class="login-box"><span class="eyebrow">STAFF ACCESS</span><h1>Welcome back.</h1><p>Sign in to review submitted items, photos and warehouse status.</p><form id="loginForm"><label>Admin password<input type="password" name="password" autocomplete="current-password" required placeholder="Enter password"></label><div id="loginError" class="admin-error" hidden></div><button type="submit" class="btn btn-primary">Sign in →</button></form><p class="hint">Enter your SHUKCHIC admin password. To set or reset it, update ADMIN_PASSWORD in Railway → SHUKCHIC MVP Staging → restyle-web → Variables.</p></section>
 <section id="dashboard" hidden><div class="dash-title"><div><span class="eyebrow">CONSIGNMENT OPERATIONS</span><h1>Incoming items <span id="count"></span></h1><p>Review submissions before inviting anyone to ship merchandise.</p></div>
- <details class="ebay-sales-settings ebay-global-settings"><summary>eBay connection settings</summary>
-  <small id="ebaySyncNote">Seller authorization tools; order sync and listing publication are off.</small>
-  <div class="ebay-sync-actions">
-   <button type="button" class="small-button" id="ebayAIConnectBtn">Connect eBay AI</button><span id="ebayAIStatus" class="detail-meta">AI not connected</span><button type="button" class="small-button" id="ebayProbeBtn">Check eBay API</button>
-   <button type="button" class="small-button" id="ebayConnectBtn" hidden>Connect eBay seller</button>
-   <button type="button" class="small-button" id="ebayRefreshBtn" hidden>Verify token refresh</button>
-   <button type="button" class="small-button" id="ebayDisconnectBtn" hidden>Disconnect</button>
-   <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">eBay developer settings</a>
+ <details class="ebay-sales-settings ebay-global-settings" id="ebayConnectionSettings">
+  <summary>eBay connection <span id="ebayConnectionSummary" class="ebay-connection-summary">Checking…</span></summary>
+  <div class="ebay-connection-simple">
+   <p id="ebayConnectionHelp">SHUKCHIC handles eBay authorization automatically. Reconnect only if access needs attention.</p>
+   <button type="button" class="small-button" id="ebayConnectBtn" hidden>Reconnect eBay</button>
+   <button type="button" class="small-button" id="ebayPublishingReconnectBtn" hidden>Reconnect listing access</button>
   </div>
-  <p id="ebayProbeResult" role="status" aria-live="polite" hidden></p>
-  <details class="ebay-demo-box" id="ebayDemo"><summary>Order matching demo</summary><p class="ebay-demo-result" id="ebayDemoResult">This preview uses sample data.</p></details>
+  <details class="ebay-diagnostics">
+   <summary>Advanced diagnostics</summary>
+   <small id="ebaySyncNote">Connection troubleshooting tools for administrators.</small>
+   <div class="ebay-sync-actions">
+    <button type="button" class="small-button" id="ebayAIConnectBtn">Connect eBay AI</button><span id="ebayAIStatus" class="detail-meta">AI not connected</span>
+    <button type="button" class="small-button" id="ebayProbeBtn">Check eBay API</button>
+    <button type="button" class="small-button" id="ebayRefreshBtn" hidden>Verify token refresh</button>
+    <button type="button" class="small-button" id="ebayDisconnectBtn" hidden>Disconnect</button>
+    <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" class="small-button ebay-setup-link" id="ebaySetupLink">eBay developer settings</a>
+   </div>
+   <p id="ebayProbeResult" role="status" aria-live="polite" hidden></p>
+   <details class="ebay-demo-box" id="ebayDemo"><summary>Order matching demo</summary><p class="ebay-demo-result" id="ebayDemoResult">This preview uses sample data.</p></details>
+  </details>
  </details>
  </div><div class="stats" id="stats"></div>
 <section id="ebaySyncCard" class="ebay-sync-card" aria-label="eBay Sales">
