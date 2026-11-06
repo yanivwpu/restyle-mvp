@@ -200,7 +200,7 @@
    }
    batchResult.textContent=done+' listings published to eBay. Each listing ID has been saved.';
    batchSelected.clear();await load();
-  }catch(err){batchResult.textContent='Live publishing stopped: '+err.message+' Check listing states before any retry.';}
+  }catch(err){await load();batchSelected.clear();updateBatchControls();batchResult.textContent='Live publishing stopped: '+err.message+' The affected listing status has been refreshed; use its correction action before any retry.';}
   finally{updateBatchControls();}
  });
  async function load(){
