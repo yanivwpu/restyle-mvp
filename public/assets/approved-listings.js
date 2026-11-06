@@ -200,7 +200,7 @@
    }
    batchResult.textContent=done+' listings published to eBay. Each listing ID has been saved.';
    batchSelected.clear();await load();
-  }catch(err){batchResult.textContent='Live publishing stopped: '+err.message+' Check listing states before any retry.';}
+  }catch(err){await load();batchSelected.clear();updateBatchControls();batchResult.textContent='Live publishing stopped: '+err.message+' The affected listing status has been refreshed; use its correction action before any retry.';}
   finally{updateBatchControls();}
  });
  async function load(){
@@ -232,7 +232,29 @@
       feedback.textContent=item.style_fix_available===true?'eBay requires a Style item specific. Confirm the value below to repair the existing unpublished offer.':
        'Publication needs reconciliation. SHUKCHIC will not retry until the saved eBay status is verified.';
      }
-     if(item.ebay_offer_state==='UNKNOWN'&&item.style_fix_available===true){
+     if(item.ebay_offer_state==='UNKNOWN'&&item.weight_fix_available===true){
+      feedback.textContent='eBay rejected the saved shipping weight. Enter Samantha’s actual packed weight in whole ounces; the existing unpublished offer will be updated, not recreated.';
+      const fixWeight=document.createElement('button');fixWeight.type='button';
+      fixWeight.className='small-button approved-style-fix';fixWeight.textContent='Correct shipping weight';
+      fixWeight.addEventListener('click',async()=>{
+       const entered=window.prompt('Actual packed shipping weight in whole ounces (round UP, including packaging). Do not guess:');
+       if(entered===null)return;
+       const oz=Number(entered);
+       if(!Number.isSafeInteger(oz)||oz<1||oz>2400){batchResult.textContent='Enter a verified whole-ounce weight from 1 to 2400.';return;}
+       if(!window.confirm('Update the existing unpublished eBay inventory item to '+oz+' oz? This does NOT publish it.'))return;
+       fixWeight.disabled=true;batchResult.textContent='Verifying existing eBay offer and correcting the package weight…';
+       try{
+        const res=await fetch('/api/admin/ebay/offers/fix-weight/'+encodeURIComponent(item.id),{
+         method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({ounces:oz})
+        });
+        const result=await res.json();
+        if(!res.ok)throw Error(result.error||'Weight correction failed.');
+        batchSelected.clear();await load();
+        batchResult.textContent='Shipping weight updated on the existing unpublished eBay offer. Samantha can now confirm live publication again.';
+       }catch(err){batchResult.textContent='Weight correction stopped: '+err.message+' Do not retry until the eBay status is reconciled.';fixWeight.disabled=false;}
+      });
+      wrapper.append(checkbox,button,fixWeight,feedback);
+     }else      if(item.ebay_offer_state==='UNKNOWN'&&item.style_fix_available===true){
       const fix=document.createElement('button');fix.type='button';fix.className='small-button approved-style-fix';
       fix.textContent='Add required Style';
       fix.addEventListener('click',async()=>{
