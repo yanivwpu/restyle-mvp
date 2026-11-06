@@ -225,3 +225,20 @@ test('generic uncertain publish failures cannot be repaired as missing Style',as
   x.db.close();
  }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
 });
+
+test('saved eBay 25002 missing-Style failure exposes repair action regardless of message phrasing',()=>{
+ const db=new DatabaseSync(':memory:');
+ const service=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=>'test-token'},loadPhoto:async()=>null});
+ const now=new Date().toISOString();
+ db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,offer_id,last_error,created_at,updated_at) VALUES (?,?,'UNKNOWN',?,?,?,?)")
+ .run(item.id,item.sku,'998877','Live eBay publishing rejected by eBay (HTTP 400; codes 25002): A user error has occurred. The item specific Style is missing.',now,now);
+ assert.equal(service.get(item.id).styleFixAvailable,true);
+ assert.equal(service.get(item.id).state,'UNKNOWN');
+ db.prepare("UPDATE ebay_offer_preparations SET last_error=? WHERE submission_id=?")
+ .run('Live eBay publishing rejected by eBay (HTTP 400; codes 25002): Add valid Style to inventory.',item.id);
+ assert.equal(service.get(item.id).styleFixAvailable,true);
+ db.prepare("UPDATE ebay_offer_preparations SET last_error=? WHERE submission_id=?")
+ .run('Live eBay publishing rejected by eBay (HTTP 400; codes 25002): Missing Color.',item.id);
+ assert.equal(service.get(item.id).styleFixAvailable,false);
+ db.close();
+});
