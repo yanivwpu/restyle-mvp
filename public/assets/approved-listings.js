@@ -240,81 +240,35 @@
    const specifics=Object.entries(d.itemSpecifics||{}).filter(([key,value])=>value!=null&&String(value).trim()&&['Color','Item type','Size','Material','Measurements','Known wear / flaws'].includes(key));
    const specificsHtml=specifics.length?'<div class="approved-specifics"><h4>Item details</h4><dl>'+specifics.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl></div>':'';
    // Keep all advisory checks on the server for future API validation, not as a to-do list in Samantha's preview.
-   preview.innerHTML='<div class="approved-preview-header"><h3>Listing preview</h3><button class="small-button" id="closeApprovedPreview" type="button" aria-label="Close listing preview">Close</button></div><div class="approved-preview-content"><div><div class="approved-image-wrap">'+imgHtml+'</div><div class="approved-image-strip">'+strip+'</div></div><div><h3>'+esc(d.title)+'</h3><strong class="approved-preview-price">'+esc(currency(d.price.amount))+'</strong><p class="detail-meta">Condition: '+esc(d.condition)+'</p><p class="detail-meta">Category: '+esc(d.category.label||'Unconfirmed')+'</p><p class="detail-meta">SKU: '+esc(d.sku)+'</p>'+specificsHtml+'<h4>Description</h4><p class="approved-preview-description">'+esc(d.description)+'</p></div></div><div class="approved-preview-buttons"><button type="button" class="btn btn-outline" id="approvedEdit">Edit listing</button><button class="btn btn-outline" type="button" id="approvedConnect">Connect eBay publishing</button><button class="btn btn-outline" type="button" id="approvedRenewPublishing" hidden>Renew eBay publishing access</button><button class="btn btn-primary" type="button" id="approvedPublish" disabled>Publish to eBay</button></div><p class="detail-meta" id="approvedPublishStatus" role="status">Live publishing remains off. Connect eBay publishing access to verify the seller setup.</p>';
-   const connectionButton=$('#approvedConnect'),renewPublishingButton=$('#approvedRenewPublishing'),publishMessage=$('#approvedPublishStatus');
-   let publishingConnected=false;
-   try{
-    const status=await fetchData('/api/admin/ebay/publishing/status');
-    publishingConnected=Boolean(status.connected);
-    renewPublishingButton.hidden=!publishingConnected;
-    connectionButton.textContent=publishingConnected?'Check eBay seller setup':'Connect eBay publishing';
-    publishMessage.textContent=publishingConnected?'Publishing authorization connected. Check seller settings before eBay offer creation. No listing has been published.':'Connect publishing authorization to prepare an unpublished eBay offer. Nothing will be published during connection.';
-   }catch(err){publishMessage.textContent='eBay publishing status could not be checked: '+err.message;}
+   preview.innerHTML='<div class="approved-preview-header"><h3>Listing preview</h3><button class="small-button" id="closeApprovedPreview" type="button" aria-label="Close listing preview">Close</button></div><div class="approved-preview-content"><div><div class="approved-image-wrap">'+imgHtml+'</div><div class="approved-image-strip">'+strip+'</div></div><div><h3>'+esc(d.title)+'</h3><strong class="approved-preview-price">'+esc(currency(d.price.amount))+'</strong><p class="detail-meta">Condition: '+esc(d.condition)+'</p><p class="detail-meta">Category: '+esc(d.category.label||'Unconfirmed')+'</p><p class="detail-meta">SKU: '+esc(d.sku)+'</p>'+specificsHtml+'<h4>Description</h4><p class="approved-preview-description">'+esc(d.description)+'</p></div></div><div class="approved-preview-buttons"><button type="button" class="btn btn-outline" id="approvedEdit">Edit listing</button><button class="btn btn-primary" type="button" id="approvedPublish" disabled>Publish to eBay</button></div><p class="detail-meta" id="approvedPublishStatus" role="status">Live publishing remains off. Connect eBay publishing access to verify the seller setup.</p>';
+   const publishMessage=$('#approvedPublishStatus');
+   publishMessage.textContent='SHUKCHIC automatically checks listing readiness and eBay settings when you publish.';
    const publishButton=$('#approvedPublish');
+   let offerState=null;
    try{
-    const offer=await fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id));
-    if(offer.state==='PREPARED'){
-     publishMessage.textContent='Unpublished eBay offer '+offer.offerId+' is ready. '+(offer.livePublishAvailable?'Samantha can review and publish this listing.':'Live publishing remains disabled for the controlled pilot.');
-     publishButton.disabled=!offer.livePublishAvailable;
-    }else if(offer.state==='LIVE'&&/^\d{5,30}$/.test(offer.listingId||'')){
-     publishMessage.replaceChildren();
-     const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+offer.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View published eBay listing '+offer.listingId;
-     publishMessage.append(link);
-    }else if(offer.state==='UNKNOWN'){
-     publishMessage.textContent='eBay offer outcome requires manual reconciliation. Publishing is blocked.';
+    offerState=await fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id));
+    if(offerState.state==='UNKNOWN'||offerState.state==='PREPARING'||offerState.state==='PUBLISHING'){
+     publishMessage.textContent='This listing needs an eBay connection review before another publishing attempt.';
+     publishButton.disabled=true;
+    }else if(offerState.state==='LIVE'&&/^\d{5,30}$/.test(offerState.listingId||'')){
+     const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+offerState.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View live listing on eBay';
+     publishMessage.replaceChildren(link);
+     publishButton.disabled=true;
+    }else if(d.reviewStatus==='REVIEWED'){
+     publishButton.disabled=false;
+     publishMessage.textContent=offerState.state==='PREPARED'?
+       'Offer prepared. Live publishing will require Samantha’s final approval.':
+       'Staff reviewed. Choose Publish to eBay to continue; SHUKCHIC will handle the technical setup.';
+    }else{
+     publishMessage.textContent='Finish staff review before publishing.';
     }
-   }catch(err){publishMessage.textContent+=' Unable to read eBay offer status: '+err.message;}
-   publishButton.addEventListener('click',async()=>{
+   }catch(err){publishMessage.textContent='Unable to check eBay listing status: '+err.message;}
+   publishButton.addEventListener('click',()=>{
     if(publishButton.disabled)return;
-    if(window.prompt('Publish this listing LIVE on eBay? Type PUBLISH to confirm:')!=='PUBLISH')return;
-    if(!window.confirm('Confirm publication: buyers may immediately purchase this item on eBay.'))return;
-    publishButton.disabled=true;publishMessage.textContent='Publishing to eBay…';
-    try{
-     const response=await fetch('/api/admin/ebay/offers/publish/'+encodeURIComponent(id),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:'PUBLISH_SELECTED_TO_EBAY'})});
-     const result=await response.json();
-     if(!response.ok)throw Error(result.error||'eBay publishing failed.');
-     publishMessage.textContent='eBay listing '+result.listingId+' published successfully. Open Listing Queue for the live link.';
-     await load();
-    }catch(err){publishMessage.textContent='eBay publishing stopped: '+err.message+' Verify the listing state before retrying.';}
-   });
-   // A renamed seller can invalidate the separate publishing refresh token even when the standard seller token is healthy.
-   // Starting consent again replaces the publishing token only after eBay verifies the same immutable seller ID.
-   renewPublishingButton.addEventListener('click',async()=>{
-    renewPublishingButton.disabled=true;
-    publishMessage.textContent='Opening eBay to renew publishing authorization. No listing will be published.';
-    try{
-     const response=await fetch('/api/admin/ebay/oauth/publishing-start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
-     const result=await response.json();
-     if(!response.ok)throw Error(result.error||'Unable to start publishing authorization renewal.');
-     if(!result.authorizationUrl||!result.authorizationUrl.startsWith('https://auth.ebay.com/'))throw Error('Invalid eBay authorization destination.');
-     window.location.assign(result.authorizationUrl);
-    }catch(err){publishMessage.textContent='eBay publishing authorization: '+err.message;renewPublishingButton.disabled=false;}
-   });
-   connectionButton.addEventListener('click',async()=>{
-    connectionButton.disabled=true;
-    publishMessage.textContent=publishingConnected?'Checking eBay seller policies and inventory locations…':'Opening eBay publishing authorization…';
-    try{
-     if(!publishingConnected){
-      const response=await fetch('/api/admin/ebay/oauth/publishing-start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
-      const result=await response.json();
-      if(!response.ok)throw Error(result.error||'Unable to start eBay authorization.');
-      if(!result.authorizationUrl||!result.authorizationUrl.startsWith('https://auth.ebay.com/'))throw Error('Invalid eBay authorization destination.');
-      window.location.assign(result.authorizationUrl);
-     }else{
-      const data=await fetchData('/api/admin/ebay/publishing/setup');
-      const types=[['shipping',data.policies?.fulfillment],['payment',data.policies?.payment],['returns',data.policies?.returns],['inventory locations',data.locations]];
-      publishMessage.textContent=types.map(([name,value])=>{
-       if(value?.available)return name+': '+value.items.length+' available';
-       return name+': '+(value?.status?'eBay HTTP '+value.status:'connection issue')+(value?.codes?.length?' (error '+value.codes.join(', ')+')':'');
-      }).join(' · ')+'. No listing created.';
-      const failedPolicies=types.slice(0,3).filter(([_,value])=>!value?.available);
-      if(failedPolicies.length){
-       const allForbidden=failedPolicies.every(([_,value])=>value?.status===403);
-       publishMessage.textContent+=' '+(allForbidden?'eBay has denied business-policy access. Check whether this seller is enrolled in eBay Business Policies and whether the app has Account API access.':'The error codes above will help identify missing permissions or seller setup.');
-      }
-     }
-    }catch(err){publishMessage.textContent='eBay setup: '+err.message+(String(err.message||'').includes('invalid_grant')?' Renew the separate eBay publishing access, then recheck seller setup.':'');}
-    finally{connectionButton.disabled=false;}
+    batchSelected.clear();batchSelected.add(id);updateBatchControls();
+    preview.hidden=true;
+    offerForm.hidden=true;
+    offerSetup.click();
    });
    $('#closeApprovedPreview').addEventListener('click',()=>{preview.hidden=true;});
    $('#approvedEdit').addEventListener('click',()=>{
