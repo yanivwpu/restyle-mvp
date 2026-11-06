@@ -11,7 +11,7 @@ function response(status,data={}){return {status,ok:status>=200&&status<300,json
 function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,missingStyle=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
  const db=new DatabaseSync(':memory:');const calls=[];let inventoryRecord=null;
  const fetcher=async(url,opt={})=>{
-  calls.push({url,method:opt.method||'GET',headers:opt.headers||{}});
+  calls.push({url,method:opt.method||'GET',headers:opt.headers||{},body:typeof opt.body==='string'?opt.body:null});
   if(url.includes('payment_policy'))return response(200,{paymentPolicies:[{paymentPolicyId:'11'}]});
   if(url.includes('fulfillment_policy'))return response(200,{fulfillmentPolicies:[{fulfillmentPolicyId:'22'}]});
   if(url.includes('return_policy'))return response(200,{returnPolicies:[{returnPolicyId:'33'}]});
@@ -195,6 +195,7 @@ test('staff-reviewed item specifics including Style are retained in new inventor
  await x.service.prepare({item,draft:{...draft,aspects:{Style:'Ear Cuff','Brand':'Aurelie Bidermann'}},photos,settings});
  const put=x.calls.find(c=>c.method==='PUT'&&c.url.includes('/inventory_item/'));
  assert.ok(put);
+ assert.deepEqual(JSON.parse(put.body).product.aspects.Style,['Ear Cuff']);
  x.db.close();
 });
 test('specific publish validation error can repair existing eBay inventory without duplicating offer',async()=>{
