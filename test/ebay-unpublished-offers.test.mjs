@@ -8,22 +8,22 @@ const draft={status:'REVIEWED',title:'Aurelie Bidermann Ear Cuff',description:'W
 const photos=[{id:'12345678-1234-1234-1234-123456789abc',source:'warehouse'}];
 const settings={merchantLocationKey:'FL-WAREHOUSE',policies:{paymentPolicyId:'11',fulfillmentPolicyId:'22',returnPolicyId:'33'},parcel:{weightLb:0.3,lengthIn:6,widthIn:4,heightIn:3}};
 function response(status,data={}){return {status,ok:status>=200&&status<300,json:async()=>data,headers:{get:()=>null}};}
-function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
- const db=new DatabaseSync(':memory:');const calls=[];
+function fixture({enabled=true,failOffer=false,publishEnabled=false,failPublish=false,missingStyle=false,existingInventory=false,inventoryReadError=false,collectionError=false,collectionHasSku=false}={}){
+ const db=new DatabaseSync(':memory:');const calls=[];let inventoryRecord=null;
  const fetcher=async(url,opt={})=>{
-  calls.push({url,method:opt.method||'GET',headers:opt.headers||{}});
+  calls.push({url,method:opt.method||'GET',headers:opt.headers||{},body:typeof opt.body==='string'?opt.body:null});
   if(url.includes('payment_policy'))return response(200,{paymentPolicies:[{paymentPolicyId:'11'}]});
   if(url.includes('fulfillment_policy'))return response(200,{fulfillmentPolicies:[{fulfillmentPolicyId:'22'}]});
   if(url.includes('return_policy'))return response(200,{returnPolicies:[{returnPolicyId:'33'}]});
   if(url.includes('/location?'))return response(200,{locations:[{merchantLocationKey:'FL-WAREHOUSE'}]});
   if(url.includes('/offer?sku='))return response(200,{offers:[]});
   if(url.includes('/inventory_item?')&&opt.method==='GET')return collectionError?response(400,{errors:[{errorId:25709,message:'Invalid limit'}]}):response(200,{total:collectionHasSku?1:0,inventoryItems:collectionHasSku?[{sku:'001'}]:[]});
-  if(url.includes('/inventory_item/')&&opt.method==='GET')return inventoryReadError?response(400,{errors:[{errorId:25709,message:'Invalid value for SKU',parameters:[{name:'fieldName',value:'sku'}]}]}):existingInventory?response(200,{sku:'001'}):response(404);
+  if(url.includes('/inventory_item/')&&opt.method==='GET')return inventoryReadError?response(400,{errors:[{errorId:25709,message:'Invalid value for SKU',parameters:[{name:'fieldName',value:'sku'}]}]}):(inventoryRecord?response(200,{sku:'001',...inventoryRecord}):existingInventory?response(200,{sku:'001'}):response(404));
   if(url.includes('/create_image_from_file'))return response(201,{imageUrl:'https://i.ebayimg.com/images/g/test/s-l500.jpg'});
-  if(url.includes('/inventory_item/')&&opt.method==='PUT')return response(204);
+  if(url.includes('/inventory_item/')&&opt.method==='PUT'){inventoryRecord=JSON.parse(opt.body);return response(204);}
   if(url.endsWith('/offer')&&opt.method==='POST')return failOffer?response(502,{errors:[{errorId:25101}]}):response(201,{offerId:'998877'});
   if(url.endsWith('/offer/998877')&&opt.method==='GET')return response(200,{sku:'001'});
-  if(url.endsWith('/offer/998877/publish')&&opt.method==='POST')return failPublish?response(502,{errors:[{errorId:25704}]}):response(200,{listingId:'123456789012'});
+  if(url.endsWith('/offer/998877/publish')&&opt.method==='POST')return missingStyle?response(400,{errors:[{errorId:25002,message:'The item specific Style is missing. Add Style to this listing, enter a valid value, and then try again.'}]}):failPublish?response(502,{errors:[{errorId:25704}]}):response(200,{listingId:'123456789012'});
 
   throw Error('Unexpected eBay route '+url);
  };
@@ -188,4 +188,40 @@ test('only an old blocked read-only Accept-Language rejection is recovered, neve
  assert.equal(svc.get('RS-1111111111').state,'UNKNOWN');
  assert.equal(svc.get('RS-2222222222').state,'BLOCKED_READ_ONLY');
  db.close();
+});
+
+test('staff-reviewed item specifics including Style are retained in new inventory',async()=>{
+ const x=fixture();
+ await x.service.prepare({item,draft:{...draft,aspects:{Style:'Ear Cuff','Brand':'Aurelie Bidermann'}},photos,settings});
+ const put=x.calls.find(c=>c.method==='PUT'&&c.url.includes('/inventory_item/'));
+ assert.ok(put);
+ assert.deepEqual(JSON.parse(put.body).product.aspects.Style,['Ear Cuff']);
+ x.db.close();
+});
+test('specific publish validation error can repair existing eBay inventory without duplicating offer',async()=>{
+ const original=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true,missingStyle:true});
+  await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}),e=>e.status===502&&e.message.includes('Style is missing'));
+  assert.equal(x.service.get(item.id).state,'UNKNOWN');
+  assert.equal(x.service.get(item.id).styleFixAvailable,true);
+  const repaired=await x.service.repairStyle({item,style:'Ear Cuff'});
+  assert.equal(repaired.state,'PREPARED');
+  assert.equal(x.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/offer')).length,1);
+  assert.equal(x.calls.filter(c=>c.method==='PUT'&&c.url.includes('/inventory_item/')).length,2);
+  assert.equal(x.calls.filter(c=>c.url.endsWith('/publish')).length,1);
+  x.db.close();
+ }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
+});
+test('generic uncertain publish failures cannot be repaired as missing Style',async()=>{
+ const original=process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST='001';
+ try{
+  const x=fixture({publishEnabled:true,failPublish:true});
+  await x.service.prepare({item,draft,photos,settings});
+  await assert.rejects(x.service.publish({item,draft,photos,confirmation:'PUBLISH_SELECTED_TO_EBAY'}));
+  await assert.rejects(x.service.repairStyle({item,style:'Ear Cuff'}),e=>e.status===409);
+  assert.equal(x.calls.filter(c=>c.method==='PUT'&&c.url.includes('/inventory_item/')).length,1);
+  x.db.close();
+ }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
 });

@@ -31,7 +31,10 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  if(recoveredLanguage.changes>0)console.info('Recovered '+recoveredLanguage.changes+' eBay inventory Accept-Language read-only failure(s).');
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
- function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false};}
+ const styleFailure=x=>x&&x.state==='UNKNOWN'&&!!x.offer_id&&!x.listing_id&&
+   /^Live eBay publishing rejected by eBay \(HTTP 400; codes 25002\)/.test(x.last_error||'')&&
+   /item specific Style is missing/i.test(x.last_error||'');
+ function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',styleFixAvailable:!!styleFailure(x),livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false,styleFixAvailable:false};}
  async function call(url,options){
   let response;
   try{response=await fetcher(url,{...options,signal:AbortSignal.timeout(16000)});}
@@ -156,7 +159,17 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    remoteWriteStarted=true;
    for(const photo of photos.slice(0,12))urls.push(await mediaUpload(token,{...photo,submissionId:item.id}));
    const facts=draft.verifiedFacts||{};
-   const aspects={...(item.brand?{Brand:[item.brand]}:{}),...(facts.color?{Color:[facts.color]}:{}),...(facts.size?{Size:[facts.size]}:{}),...(facts.material?{Material:[facts.material]}:{}),...(facts.category?{Type:[facts.category]}:{})};
+   // Include every staff-reviewed item specific, not just the five core fields.
+   // Never infer a material or style from AI description prose.
+   const aspects={};
+   for(const [key,value] of Object.entries(draft.aspects||{})){
+    if(!/^[A-Za-z][A-Za-z0-9 &/()'.,-]{0,64}$/.test(key))continue;
+    const values=(Array.isArray(value)?value:[value]).map(v=>slim(v)).filter(v=>v&&v.length<=150);
+    if(values.length)aspects[key]=values.slice(0,5);
+   }
+   for(const [key,value] of [['Brand',item.brand],['Color',facts.color],['Size',facts.size],['Material',facts.material],['Type',facts.category]]){
+    if(value&&!aspects[key])aspects[key]=[slim(value)];
+   }
    const inventoryBody={availability:{shipToLocationAvailability:{quantity:1}},condition:CONDITIONS[item.condition],
     product:{title:draft.title,description:draft.description,aspects,imageUrls:urls},
     packageWeightAndSize:{dimensions:{length,width,height,unit:'INCH'},weight:{value:weight,unit:'POUND'}}};
@@ -175,6 +188,58 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    const readOnly=!remoteWriteStarted;
    db.prepare("UPDATE ebay_offer_preparations SET state=?,updated_at=?,last_error=? WHERE submission_id=? AND state='PREPARING'")
     .run(readOnly?'BLOCKED_READ_ONLY':'UNKNOWN',new Date(clock()).toISOString(),String(err.message||'eBay request failed').slice(0,400),item.id);
+   throw err;
+  }
+ }
+ // Correct the already-created inventory item after a specific eBay "Style missing"
+ // validation failure. Never recreate an offer or silently retry publishOffer.
+ async function repairStyle({item,style}){
+  const cleanStyle=slim(style);
+  if(!cleanStyle||cleanStyle.length>70||/[<>\r\n]/.test(cleanStyle))throw fail(400,'Enter a verified item Style (up to 70 characters).');
+  if(!publishEnabled()||!slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(x=>x.trim()).includes(item.sku))
+   throw fail(409,'Style correction is restricted to the controlled listing pilot.');
+  const current=db.prepare('SELECT * FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
+  if(!styleFailure(current)||current.sku!==item.sku)
+   throw fail(409,'This item does not have the verified missing-Style error. Do not alter the eBay offer.');
+  const token=await oauth.getPublishingToken();
+  const offer=await api(token,'/sell/inventory/v1/offer/'+encodeURIComponent(current.offer_id));
+  if(!offer.ok)throw eBayError(offer,'Read-only offer reconciliation');
+  if(slim(offer.data?.sku)!==item.sku||offer.data?.listingId)
+   throw fail(409,'Offer SKU or published status differs. Manual reconciliation required; no writes made.');
+  const remote=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku));
+  if(!remote.ok)throw eBayError(remote,'Read-only inventory reconciliation');
+  if(slim(remote.data?.sku)!==item.sku||!remote.data?.product||
+     !Array.isArray(remote.data.product.imageUrls)||!remote.data.product.imageUrls.length)
+   throw fail(409,'Existing eBay inventory or photos could not be verified. No writes made.');
+  const currentStyle=remote.data.product.aspects?.Style;
+  if(currentStyle?.length&&currentStyle[0]!==cleanStyle)
+   throw fail(409,'A different Style is already stored at eBay. Manual review required.');
+  const replacement={
+   availability:remote.data.availability,
+   condition:remote.data.condition,
+   product:{...remote.data.product,aspects:{...(remote.data.product.aspects||{}),Style:[cleanStyle]}},
+   packageWeightAndSize:remote.data.packageWeightAndSize
+  };
+  if(remote.data.conditionDescription)replacement.conditionDescription=remote.data.conditionDescription;
+  if(remote.data.conditionDescriptors)replacement.conditionDescriptors=remote.data.conditionDescriptors;
+  if(!replacement.availability||!replacement.condition||!replacement.packageWeightAndSize)
+   throw fail(409,'Original eBay inventory fields are incomplete; no overwrite attempted.');
+  const stamp=new Date(clock()).toISOString();
+  const lock=db.prepare("UPDATE ebay_offer_preparations SET state='REPAIRING_STYLE',updated_at=? WHERE submission_id=? AND state='UNKNOWN' AND offer_id=?")
+   .run(stamp,item.id,current.offer_id);
+  if(lock.changes!==1)throw fail(409,'Listing repair is already in progress.');
+  try{
+   const updated=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku),'PUT',replacement);
+   if(!updated.ok)throw eBayError(updated,'Style update on existing inventory');
+   const policy=JSON.parse(current.policy_json||'{}');
+   policy.staffVerifiedStyle=cleanStyle;
+   db.prepare("UPDATE ebay_offer_preparations SET state='PREPARED',policy_json=?,last_error='',updated_at=? WHERE submission_id=? AND state='REPAIRING_STYLE'")
+    .run(JSON.stringify(policy),new Date(clock()).toISOString(),item.id);
+   return safeResult(item.id);
+  }catch(err){
+   // A PUT response can be ambiguous. Do not allow a second unattended update.
+   db.prepare("UPDATE ebay_offer_preparations SET state='UNKNOWN',last_error=?,updated_at=? WHERE submission_id=? AND state='REPAIRING_STYLE'")
+    .run(('Style update needs reconciliation: '+String(err.message||'Unknown eBay result')).slice(0,400),new Date(clock()).toISOString(),item.id);
    throw err;
   }
  }
@@ -212,5 +277,5 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    throw err;
   }
  }
- return {get:safeResult,prepare,publish};
+ return {get:safeResult,prepare,publish,repairStyle};
 }
