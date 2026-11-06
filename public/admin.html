@@ -41,7 +41,7 @@
 <div class="consignment-tabs"><button type="button" class="small-button" id="showIncomingItems">Incoming & warehouse</button><button type="button" class="small-button" id="showApprovedListings">Listing Queue <span id="approvedListingsCount"></span></button></div>
 <section id="approvedListings" hidden aria-label="Approved listings">
  <div class="approved-section-heading"><div><h2>Listing Queue</h2><p id="approvedListingsStatus" role="status">Reviewed listings and drafts awaiting approval.</p></div><div class="approved-section-actions"><button type="button" id="approvedListingsReload" class="small-button">Refresh</button><button type="button" id="approvedListingsClose" class="small-button" aria-label="Close listing queue">Close</button></div></div>
- <div class="approved-batch-toolbar">
+ <div class="approved-batch-toolbar" hidden>
   <span id="approvedBatchSelected">0 selected (maximum 25)</span>
   <button type="button" class="small-button" id="approvedBatchSelectReviewed">Select reviewed</button>
   <button type="button" class="small-button" id="approvedBatchClear">Clear</button>
@@ -49,10 +49,10 @@
   <button type="button" class="small-button" id="approvedBatchPreflight" hidden disabled>Check selected for eBay</button>
   <button type="button" class="small-button" id="approvedBatchPublish" hidden disabled>Publish prepared to eBay</button>
  </div>
- <div class="detail-meta" id="approvedBatchResults" role="status">Select a staff-reviewed listing and choose Publish selected to eBay.</div>
+ <div class="detail-meta" id="approvedBatchResults" role="status">Choose a listing to review, edit, or publish it to eBay.</div>
  <div id="approvedBatchOfferForm" class="approved-offer-form" hidden>
-  <h3 id="approvedOfferFormTitle">Ready to publish</h3>
-  <p class="detail-meta" id="approvedOfferIntro">SHUKCHIC uses your existing eBay policies. Enter the actual packed measurements if they are not yet saved.</p>
+  <h3 id="approvedOfferFormTitle">Shipping package details</h3>
+  <p class="detail-meta" id="approvedOfferIntro">Enter actual package measurements only when first creating this item on eBay.</p>
   <div id="approvedOfferDefaultsSummary" class="detail-meta"></div>
   <details class="approved-offer-advanced" id="approvedOfferAdvanced">
    <summary>Change eBay shipping, payment, returns or location</summary>
