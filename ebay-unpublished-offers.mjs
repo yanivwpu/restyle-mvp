@@ -37,7 +37,11 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    /Live eBay publishing rejected by eBay/i.test(x.last_error||'')&&
    /codes 25002\b/.test(x.last_error||'')&&
    /\bStyle\b/i.test(x.last_error||'');
- function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',styleFixAvailable:!!styleFailure(x),livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false,styleFixAvailable:false};}
+ const weightFailure=x=>x&&x.state==='UNKNOWN'&&!!x.offer_id&&!x.listing_id&&
+   /Live eBay publishing rejected by eBay/i.test(x.last_error||'')&&
+   /codes 25020\b/.test(x.last_error||'')&&
+   /(package weight|weight is not valid|weight is missing)/i.test(x.last_error||'');
+ function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',styleFixAvailable:!!styleFailure(x),weightFixAvailable:!!weightFailure(x),livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false,styleFixAvailable:false,weightFixAvailable:false};}
  async function call(url,options){
   let response;
   try{response=await fetcher(url,{...options,signal:AbortSignal.timeout(16000)});}
@@ -246,6 +250,54 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    throw err;
   }
  }
+ // Repair an existing unpublished offer after a confirmed missing/invalid shipping
+ // weight rejection. Never create an offer or publish from this method.
+ async function repairWeight({item,ounces}){
+  const value=Number(ounces);
+  if(!Number.isSafeInteger(value)||value<1||value>2400)
+   throw fail(400,'Enter the actual packed weight rounded UP to a whole ounce (1–2400 oz).');
+  if(!publishEnabled()||!slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(x=>x.trim()).includes(item.sku))
+   throw fail(409,'Shipping correction is restricted to the controlled SKU pilot.');
+  const current=db.prepare('SELECT * FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
+  if(!weightFailure(current)||current.sku!==item.sku)
+   throw fail(409,'This offer does not have the verified shipping-weight validation error.');
+  const token=await oauth.getPublishingToken();
+  const offer=await api(token,'/sell/inventory/v1/offer/'+encodeURIComponent(current.offer_id));
+  if(!offer.ok)throw eBayError(offer,'Read-only offer reconciliation');
+  if(slim(offer.data?.sku)!==item.sku||offer.data?.listingId)
+   throw fail(409,'eBay offer SKU or publication status has changed. No update attempted.');
+  const inventory=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku));
+  if(!inventory.ok)throw eBayError(inventory,'Read-only inventory reconciliation');
+  const remote=inventory.data||{};
+  if(slim(remote.sku)!==item.sku||!remote.product||!Array.isArray(remote.product.imageUrls)||
+    !remote.product.imageUrls.length||!remote.availability||!remote.condition||
+    !remote.packageWeightAndSize?.dimensions)
+   throw fail(409,'eBay inventory fields could not be verified; no update attempted.');
+  const replacement={
+   availability:remote.availability,
+   condition:remote.condition,
+   product:remote.product,
+   packageWeightAndSize:{...remote.packageWeightAndSize,weight:{unit:'OUNCE',value}}
+  };
+  if(remote.conditionDescription)replacement.conditionDescription=remote.conditionDescription;
+  if(remote.conditionDescriptors)replacement.conditionDescriptors=remote.conditionDescriptors;
+  const locked=db.prepare("UPDATE ebay_offer_preparations SET state='REPAIRING_WEIGHT',updated_at=? WHERE submission_id=? AND state='UNKNOWN' AND offer_id=?")
+   .run(new Date(clock()).toISOString(),item.id,current.offer_id);
+  if(locked.changes!==1)throw fail(409,'This listing is already being reconciled.');
+  try{
+   const response=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku),'PUT',replacement);
+   if(!response.ok)throw eBayError(response,'Shipping-weight update');
+   const saved=JSON.parse(current.policy_json||'{}');
+   saved.staffVerifiedWeightOz=value;
+   db.prepare("UPDATE ebay_offer_preparations SET state='PREPARED',policy_json=?,last_error='',updated_at=? WHERE submission_id=? AND state='REPAIRING_WEIGHT'")
+    .run(JSON.stringify(saved),new Date(clock()).toISOString(),item.id);
+   return safeResult(item.id);
+  }catch(err){
+   db.prepare("UPDATE ebay_offer_preparations SET state='UNKNOWN',last_error=?,updated_at=? WHERE submission_id=? AND state='REPAIRING_WEIGHT'")
+    .run(('Shipping-weight update requires reconciliation: '+String(err.message||'Unknown response')).slice(0,400),new Date(clock()).toISOString(),item.id);
+   throw err;
+  }
+ }
  async function publish({item,draft,photos,duplicates,issues=[],confirmation}){
   if(!publishEnabled())throw fail(409,'Live eBay publishing is disabled until the controlled pilot succeeds.');
   const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(x=>x.trim()).filter(Boolean);
@@ -280,5 +332,5 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
    throw err;
   }
  }
- return {get:safeResult,prepare,publish,repairStyle};
+ return {get:safeResult,prepare,publish,repairStyle,repairWeight};
 }
