@@ -57,6 +57,44 @@
  batchCheck.addEventListener('click',()=>{runBatchPreflight().catch(()=>{});});
 
 
+ const livePanel=$('#approvedLiveReview'),liveSummary=$('#approvedLiveSummary'),liveProgress=$('#approvedLiveProgress');
+ const liveConfirm=$('#approvedLiveConfirm');
+ let pendingLiveId=null;
+ const itemById=id=>batchItems.find(x=>x.id===id);
+ function openLiveReview(id){
+  const item=itemById(id);
+  if(!item){batchResult.textContent='Refresh the listing queue and select one item.';return;}
+  pendingLiveId=id;
+  liveSummary.textContent=(item.title||item.sku)+' · '+currency(item.price_cents/100)+' · SKU '+item.sku;
+  liveProgress.textContent='Your unpublished eBay offer is ready. No sale is live until you click Publish this item live.';
+  livePanel.hidden=false;
+  offerForm.hidden=true;
+  livePanel.scrollIntoView({block:'nearest',behavior:'smooth'});
+ }
+ $('#approvedLiveCancel').addEventListener('click',()=>{
+  pendingLiveId=null;livePanel.hidden=true;liveProgress.textContent='No publication requested.';
+ });
+ liveConfirm.addEventListener('click',async()=>{
+  if(!pendingLiveId)return;
+  const id=pendingLiveId;liveConfirm.disabled=true;
+  liveProgress.textContent='Checking the unpublished offer and publishing this one item to eBay…';
+  try{
+   const state=await fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id));
+   if(state.state!=='PREPARED'||!state.livePublishAvailable)throw Error('This item is not ready for live publication. Check the listing status.');
+   const response=await fetch('/api/admin/ebay/offers/publish/'+encodeURIComponent(id),{
+    method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:'PUBLISH_SELECTED_TO_EBAY'})
+   });
+   const data=await response.json();if(!response.ok)throw Error(data.error||'eBay rejected publication.');
+   if(!/^\d{5,30}$/.test(String(data.listingId||'')))throw Error('No verified eBay listing ID was returned. Check its state before retrying.');
+   pendingLiveId=null;livePanel.hidden=true;batchSelected.clear();await load();
+   batchResult.replaceChildren(document.createTextNode('Live on eBay. '));
+   const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+data.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View listing '+data.listingId;
+   batchResult.append(link);
+  }catch(err){
+   await load();pendingLiveId=null;livePanel.hidden=true;batchSelected.clear();updateBatchControls();
+   batchResult.textContent='Publication stopped: '+err.message+' Review the refreshed listing status before attempting another action.';
+  }finally{liveConfirm.disabled=false;}
+ });
  const batchPublish=$('#approvedBatchPublish');
  const offerForm=$('#approvedBatchOfferForm'),offerSetup=$('#approvedBatchOfferSetup');
  const offerRows=$('#approvedOfferParcelRows'),offerProgress=$('#approvedOfferProgress'),offerConfirm=$('#approvedOfferConfirm');
@@ -69,6 +107,7 @@
   if(!batchSelected.size)return;
   offerSetup.disabled=true;
   offerForm.hidden=true;
+  livePanel.hidden=true;
   try{
    const statuses=await Promise.all([...batchSelected].map(id=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id))));
    if(statuses.some(x=>x.state==='UNKNOWN'||x.state==='LIVE'||x.state==='PREPARING'||x.state==='PUBLISHING'))
@@ -76,7 +115,7 @@
    if(statuses.every(x=>x.state==='PREPARED')){
     if(statuses.every(x=>x.livePublishAvailable)){
      offerSetup.disabled=false;
-     batchPublish.click();
+     openLiveReview([...batchSelected][0]);
     }else{
      batchResult.textContent='Unpublished eBay offers are ready. Live publishing is not yet enabled for this pilot; no action is needed from Samantha.';
     }
@@ -125,9 +164,9 @@
     }
     offerRows.append(row);
    }
-   $('#approvedOfferFormTitle').textContent=batchSelected.size===1?'Publish this listing':'Publish '+batchSelected.size+' listings';
-   $('#approvedOfferIntro').textContent='Only the actual packed weight and size are needed. SHUKCHIC will prepare each eBay offer automatically. Live publishing stays gated until the controlled pilot is approved.';
-   offerProgress.textContent='No eBay offer has been created. Enter the package measurements to continue.';
+   $('#approvedOfferFormTitle').textContent='Shipping package details';
+   $('#approvedOfferIntro').textContent='Enter the real packed dimensions once. SHUKCHIC automatically reuses your saved eBay policies. This first action saves an unpublished offer; a separate review lets you make it live.';
+   offerProgress.textContent='Nothing will go live from this step.';
    offerForm.hidden=false;
    offerConfirm.disabled=false;
   }catch(err){batchResult.textContent='Cannot continue to eBay: '+err.message;offerConfirm.disabled=true;}
@@ -142,7 +181,7 @@
   const selected=[...offerRows.querySelectorAll('[data-offer-item]')];
   const parcels=selected.map(row=>({id:row.dataset.offerItem,parcel:Object.fromEntries([...row.querySelectorAll('[data-parcel-field]')].map(input=>[input.dataset.parcelField,Number(input.value)]))}));
   if(parcels.some(x=>Object.values(x.parcel).some(n=>!Number.isFinite(n)||n<=0))){offerProgress.textContent='Enter the actual weight and dimensions for every selected item.';return;}
-  if(!window.confirm('Send '+parcels.length+' reviewed items to eBay? SHUKCHIC will create unpublished offers. This pilot does not enable live sales until a separate final confirmation is available.'))return;
+  // Clicking Create unpublished eBay offer is the explicit in-page authorization; no browser modal.
   offerConfirm.disabled=true;offerSetup.disabled=true;
   let completed=0;
   for(const entry of parcels){
@@ -166,7 +205,7 @@
    const states=await Promise.all(parcels.map(x=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(x.id))));
    if(states.every(x=>x.livePublishAvailable)){
     offerProgress.textContent='Unpublished offers are ready for Samantha’s final publishing confirmation.';
-    batchPublish.click();
+    openLiveReview(parcels[0].id);
    }else{
     offerProgress.textContent=completed+' unpublished offers saved in eBay. Live publishing is disabled for this pilot; no buyer can purchase them yet.';
    }
@@ -174,34 +213,12 @@
  });
  batchPublish.addEventListener('click',async()=>{
   const ids=[...batchSelected];
-  if(!ids.length||ids.length>25)return;
-  batchPublish.disabled=true;
+  if(ids.length!==1){batchResult.textContent='Open one reviewed item at a time to publish.';return;}
   try{
-   const statuses=await Promise.all(ids.map(id=>fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(id))));
-   const missing=statuses.filter(s=>s.state!=='PREPARED');
-   if(missing.length)throw Error('All selected items must have an unpublished, verified eBay offer first. '+missing.length+' not prepared.');
-   const typed=window.prompt('You are about to publish '+ids.length+' listings LIVE on eBay. Type PUBLISH to confirm:');
-   if(typed!=='PUBLISH'){batchResult.textContent='Live publishing cancelled. No changes made.';return;}
-   if(!window.confirm('Publish '+ids.length+' eBay listings now? Buyers may immediately purchase them.'))return;
-   let done=0;
-   for(const id of ids){
-    batchResult.textContent='Publishing '+(done+1)+' of '+ids.length+' listings to eBay…';
-    const response=await fetch('/api/admin/ebay/offers/publish/'+encodeURIComponent(id),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:'PUBLISH_SELECTED_TO_EBAY'})});
-    const data=await response.json();
-    if(!response.ok)throw Error('Stopped at '+id+' after '+done+' live listings: '+(data.error||'eBay publication failed.'));
-    done++;
-    const feedback=grid.querySelector('[data-batch-result="'+id+'"]');
-    if(feedback&&/^\d{5,30}$/.test(data.listingId||'')){
-     feedback.replaceChildren();
-     const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+data.listingId;
-     link.target='_blank';link.rel='noopener noreferrer';link.textContent='Live on eBay — listing '+data.listingId;
-     feedback.append(link);
-    }
-   }
-   batchResult.textContent=done+' listings published to eBay. Each listing ID has been saved.';
-   batchSelected.clear();await load();
-  }catch(err){await load();batchSelected.clear();updateBatchControls();batchResult.textContent='Live publishing stopped: '+err.message+' The affected listing status has been refreshed; use its correction action before any retry.';}
-  finally{updateBatchControls();}
+   const state=await fetchData('/api/admin/ebay/unpublished-offers/'+encodeURIComponent(ids[0]));
+   if(state.state!=='PREPARED'||!state.livePublishAvailable)throw Error('An authorized, unpublished offer is required.');
+   openLiveReview(ids[0]);
+  }catch(err){batchResult.textContent='Cannot publish: '+err.message;}
  });
  async function load(){
    if(status)status.textContent='Refreshing listings…';
