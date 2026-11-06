@@ -130,3 +130,18 @@ test('ambiguous eBay live publish response quarantines offer, never retries auto
   assert.equal(x.calls.filter(y=>y.url.endsWith('/publish')).length,count);x.db.close();
  }finally{if(original===undefined)delete process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST;else process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST=original;}
 });
+
+test('startup recovers only known pre-write 25709 failures; uncertain writes remain quarantined',()=>{
+ const db=new DatabaseSync(':memory:');
+ db.exec("CREATE TABLE ebay_offer_preparations (submission_id TEXT PRIMARY KEY,sku TEXT NOT NULL UNIQUE,state TEXT NOT NULL,offer_id TEXT,listing_id TEXT,policy_json TEXT NOT NULL DEFAULT '{}',source_hash TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+ const add=db.prepare("INSERT INTO ebay_offer_preparations(submission_id,sku,state,offer_id,last_error,created_at,updated_at) VALUES (?,?, 'UNKNOWN', ?, ?, ?, ?)");
+ const stamp=new Date().toISOString();
+ add.run('RS-A1B2C3D4E5','001',null,'Existing offer lookup rejected by eBay (HTTP 400; codes 25709). Check the account and listing settings.',stamp,stamp);
+ add.run('RS-1111111111','002',null,'eBay offer creation rejected by eBay (HTTP 400; codes 25709).',stamp,stamp);
+ add.run('RS-2222222222','003','998877','Existing offer lookup rejected by eBay (HTTP 400; codes 25709).',stamp,stamp);
+ const service=createEbayUnpublishedOffers({db,oauth:{getPublishingToken:async()=> 'test-token'},loadPhoto:async()=>null});
+ assert.equal(service.get('RS-A1B2C3D4E5').state,'NOT_PREPARED');
+ assert.equal(service.get('RS-1111111111').state,'UNKNOWN');
+ assert.equal(service.get('RS-2222222222').state,'UNKNOWN');
+ db.close();
+});

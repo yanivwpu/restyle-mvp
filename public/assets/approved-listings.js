@@ -216,7 +216,7 @@
     for(const item of list){
      const wrapper=document.createElement('div');wrapper.className='approved-batch-row';
      const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.batchId=item.id;
-     checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);checkbox.disabled=item.ebay_offer_state==='LIVE'||item.ebay_offer_state==='UNKNOWN';
+     checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);checkbox.disabled=['LIVE','UNKNOWN','BLOCKED_READ_ONLY','PREPARING','PUBLISHING'].includes(item.ebay_offer_state);
      checkbox.addEventListener('change',()=>{
       if(checkbox.checked&&batchSelected.size>=25){checkbox.checked=false;batchResult.textContent='Select up to 25 items at a time.';return;}
       if(checkbox.checked)batchSelected.add(item.id);else batchSelected.delete(item.id);
@@ -225,7 +225,7 @@
      });
      const button=document.createElement('button');button.type='button';button.className='approved-item';
      const img=item.cover?'<img loading="lazy" src="'+esc(imageUrl(item.cover))+'" alt="">':'<span class="approved-no-photo">No photo</span>';
-     button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.ebay_offer_state==='LIVE'?'Live on eBay':item.ebay_offer_state==='PREPARED'?'Unpublished offer ready':item.ebay_offer_state==='UNKNOWN'?'eBay reconciliation needed':item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
+     button.innerHTML=img+'<span class="approved-item-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.id)+' · '+esc(item.category_hint||'Category to verify')+'</small><b>'+esc(currency(item.price_cents==null?null:item.price_cents/100))+'</b></span><span class="approved-status '+(item.ebay_offer_state==='UNKNOWN'||item.ebay_offer_state==='BLOCKED_READ_ONLY'?'is-blocked':item.review_status==='REVIEWED'?'is-reviewed':'')+'">'+(item.ebay_offer_state==='LIVE'?'Live on eBay':item.ebay_offer_state==='PREPARED'?'Unpublished offer ready':item.ebay_offer_state==='UNKNOWN'?'eBay status needs review':item.ebay_offer_state==='BLOCKED_READ_ONLY'?'eBay validation blocked':item.review_status==='REVIEWED'?'Staff reviewed':'Needs review')+'</span>';
      button.addEventListener('click',()=>show(item.id));
      const feedback=document.createElement('small');feedback.className='approved-batch-feedback';feedback.dataset.batchResult=item.id;
      wrapper.append(checkbox,button,feedback);grid.append(wrapper);
