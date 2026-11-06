@@ -18,6 +18,11 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  // Additive migration for databases initialized before the controlled live-publish phase.
  if(!db.prepare('PRAGMA table_info(ebay_offer_preparations)').all().some(c=>c.name==='source_hash'))
   db.exec("ALTER TABLE ebay_offer_preparations ADD COLUMN source_hash TEXT NOT NULL DEFAULT ''");
+ // Recovery migration: the pre-inventory-first flow called getOffers on an unknown SKU.
+ // eBay rejected that READ with 25709 before any inventory, image or offer write.
+ // Only this exact historical state is safe to discard; never clear an uncertain write.
+ const recovered=db.prepare("DELETE FROM ebay_offer_preparations WHERE state='UNKNOWN' AND offer_id IS NULL AND listing_id IS NULL AND last_error LIKE 'Existing offer lookup rejected by eBay (HTTP 400; codes 25709)%'").run();
+ if(recovered.changes>0)console.info('Recovered '+recovered.changes+' legacy read-only eBay offer lookup failure(s).');
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
  function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false};}
