@@ -23,6 +23,8 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
  // Only this exact historical state is safe to discard; never clear an uncertain write.
  const recovered=db.prepare("DELETE FROM ebay_offer_preparations WHERE state='UNKNOWN' AND offer_id IS NULL AND listing_id IS NULL AND last_error LIKE 'Existing offer lookup rejected by eBay (HTTP 400; codes 25709)%'").run();
  if(recovered.changes>0)console.info('Recovered '+recovered.changes+' legacy read-only eBay offer lookup failure(s).');
+ const recoveredInventory=db.prepare("DELETE FROM ebay_offer_preparations WHERE state='BLOCKED_READ_ONLY' AND offer_id IS NULL AND listing_id IS NULL AND last_error LIKE 'Existing inventory lookup rejected by eBay (HTTP 400; codes 25709)%'").run();
+ if(recoveredInventory.changes>0)console.info('Recovered '+recoveredInventory.changes+' read-only eBay inventory lookup failure(s).');
  const statement=db.prepare('SELECT submission_id,sku,state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?');
  function get(id){return statement.get(id)||null;}
  function safeResult(id){const x=get(id);const allow=slim(process.env.SHUKCHIC_EBAY_PUBLISH_ALLOWLIST||'').split(',').map(v=>v.trim());return x?{id,sku:x.sku,state:x.state,offerId:x.offer_id||null,listingId:x.listing_id||null,requiresReconciliation:x.state==='UNKNOWN',livePublishAvailable:x.state==='PREPARED'&&publishEnabled()&&(allow.includes(x.sku)||allow.includes('*'))}:{id,state:'NOT_PREPARED',offerId:null,listingId:null,livePublishAvailable:false};}
@@ -38,9 +40,41 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   return call('https://api.ebay.com'+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json',...(body?{'Content-Type':'application/json','Content-Language':'en-US'}:{})},...(body?{body:JSON.stringify(body)}:{})});
  }
  function eBayError(result,step){
-  const codes=(result.data?.errors||[]).map(x=>Number(x.errorId)).filter(Number.isFinite).slice(0,4);
-  return fail(502,step+' rejected by eBay (HTTP '+result.status+(codes.length?'; codes '+codes.join(', '):'')+'). Check the account and listing settings.');
+  const errors=(result.data?.errors||[]).slice(0,4);
+  const codes=errors.map(x=>Number(x.errorId)).filter(Number.isFinite);
+  // eBay error 25709 contains the invalid field name in its message or parameters.
+  // Limit and sanitize displayed text; never expose request headers or OAuth tokens.
+  const details=errors.map(e=>{
+   const params=(e.parameters||[]).map(p=>slim(p.name)+'='+slim(p.value)).join(', ');
+   return [slim(e.message),slim(e.longMessage),params].filter(Boolean).join(' · ');
+  }).join('; ').replace(/[\r\n\t]/g,' ').slice(0,250);
+  return fail(502,step+' rejected by eBay (HTTP '+result.status+
+   (codes.length?'; codes '+codes.join(', '):'')+')'+(details?': '+details:'')+'.');
  }
+ // If a single-SKU GET is invalid (25709), use a complete read-only inventory scan.
+ // Page offset is a page number, not a record offset in eBay's Inventory API.
+ async function checkInventoryAbsence(token,sku){
+  const single=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(sku));
+  if(single.ok)return {absent:false};
+  if(single.status===404||single.status===400&&
+    (single.data?.errors||[]).some(e=>[25702,25710].includes(Number(e.errorId))))
+   return {absent:true};
+  const invalidField=single.status===400&&(single.data?.errors||[]).some(e=>Number(e.errorId)===25709);
+  if(!invalidField)throw eBayError(single,'Existing inventory lookup');
+  for(let page=0;page<20;page++){
+   const result=await api(token,'/sell/inventory/v1/inventory_item?limit=100&offset='+page);
+   if(!result.ok)throw eBayError(result,'Inventory collection fallback');
+   const items=result.data?.inventoryItems;
+   const total=Number(result.data?.total);
+   if(!Array.isArray(items)||!Number.isSafeInteger(total)||total<0)
+    throw fail(502,'Inventory collection returned incomplete pagination information. No writes attempted.');
+   if(items.some(x=>slim(x.sku)===sku))return {absent:false};
+   if(total<=100*(page+1))return {absent:true};
+   if(items.length===0)throw fail(502,'eBay inventory pagination stopped unexpectedly. No writes attempted.');
+  }
+  throw fail(502,'eBay inventory exceeds safe verification limit. No writes attempted.');
+ }
+
  async function availablePolicies(token){
   const requests=[
    ['/sell/account/v1/payment_policy?marketplace_id=EBAY_US','paymentPolicies','paymentPolicyId'],
@@ -81,10 +115,13 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   // No remote mutations occurred before that error in the previous implementation.
   const prior=db.prepare('SELECT state,offer_id,listing_id,last_error FROM ebay_offer_preparations WHERE submission_id=?').get(item.id);
   if(prior){
-   const knownPreWrite=prior.state==='UNKNOWN'&&!prior.offer_id&&!prior.listing_id&&
-    /^Existing offer lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
-   if(knownPreWrite){
-    db.prepare("DELETE FROM ebay_offer_preparations WHERE submission_id=? AND state='UNKNOWN' AND offer_id IS NULL AND listing_id IS NULL AND last_error=?").run(item.id,prior.last_error);
+   const oldOfferRead=prior.state==='UNKNOWN'&&
+     /^Existing offer lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
+   const oldInventoryRead=prior.state==='BLOCKED_READ_ONLY'&&
+     /^Existing inventory lookup rejected by eBay \(HTTP 400; codes 25709\)/.test(prior.last_error||'');
+   if(!prior.offer_id&&!prior.listing_id&&(oldOfferRead||oldInventoryRead)){
+    db.prepare("DELETE FROM ebay_offer_preparations WHERE submission_id=? AND state=? AND offer_id IS NULL AND listing_id IS NULL AND last_error=?")
+      .run(item.id,prior.state,prior.last_error);
    }else throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
   }
   if(get(item.id))throw fail(409,'This SKU has a prior eBay preparation. Reconcile it before making another request.');
@@ -106,12 +143,8 @@ export function createEbayUnpublishedOffers({db,oauth,fetcher=fetch,loadPhoto,cl
   try{
    // Inventory API offers require an inventory item. Check the item first.
    // The legacy getOffers call could reject unknown SKU 001 with code 25709.
-   const inventory=await api(token,'/sell/inventory/v1/inventory_item/'+encodeURIComponent(item.sku));
-   const notFound=inventory.status===404||
-    (inventory.status===400&&Array.isArray(inventory.data?.errors)&&
-      inventory.data.errors.some(e=>[25702,25710].includes(Number(e.errorId))));
-   if(inventory.ok)throw fail(409,'An eBay inventory item already exists for this SKU. Reconcile before proceeding.');
-   if(!notFound)throw eBayError(inventory,'Existing inventory lookup');
+   const inventoryCheck=await checkInventoryAbsence(token,item.sku);
+   if(!inventoryCheck.absent)throw fail(409,'An eBay inventory item already exists for this SKU. Reconcile before proceeding.');
    // No Inventory API item means there cannot be an Inventory API offer for this SKU.
    const urls=[];
    for(const photo of photos.slice(0,12))urls.push(await mediaUpload(token,{...photo,submissionId:item.id}));
