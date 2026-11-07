@@ -263,3 +263,8 @@
 .approved-inline-correction{min-width:140px;max-width:240px;padding:11px 12px;border:1px solid #d9c9ba;border-radius:8px;grid-column:2}
 .approved-preview-description{white-space:pre-line;line-height:1.7}
 .approved-batch-row .approved-item{cursor:pointer}
+
+/* First-class entry point for item intake; the review workflow is unchanged. */
+.new-item-entry{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:16px}
+.new-item-entry .btn{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;text-decoration:none;min-height:42px;padding:10px 18px}
+.new-item-entry .detail-meta{max-width:330px;font-size:12px;line-height:1.5}
