@@ -4,6 +4,22 @@ const route=window.location.pathname;
 $('#year').textContent=new Date().getFullYear();
 $('#menuToggle').addEventListener('click',()=>{let nav=$('#navLinks');const open=nav.classList.toggle('open');$('#menuToggle').setAttribute('aria-expanded',String(open));});
 $all('.nav-links a').forEach(a=>a.addEventListener('click',()=>{$('#navLinks').classList.remove('open');}));
+const contactForm=$('#contactForm');
+if(contactForm)contactForm.addEventListener('submit',async event=>{
+ event.preventDefault();
+ const button=$('#contactSend'),status=$('#contactStatus');
+ const data=Object.fromEntries(new FormData(contactForm));
+ button.disabled=true;status.textContent='Sending your message…';
+ try{
+  const response=await fetch('/api/contact',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const json=await response.json();
+  if(!response.ok)throw new Error(json.error||'Your message could not be sent.');
+  contactForm.reset();
+  status.textContent='Thank you. Your message was received by SHUKCHIC.';
+ }catch(error){status.textContent=error.message||'Please try again.';}
+ finally{button.disabled=false;}
+});
 const privacy=`<h1>Privacy Notice</h1><p class="draft-flag">Pilot notice: Update the business's legal contact details, retention period and effective date before opening this service publicly.</p><p>SHUKCHIC collects the name, email, optional phone number, item details and photographs you provide to assess a possible consignment relationship, respond to your request and operate the submission workflow.</p><h2>Who can see your information?</h2><p>Authorized SHUKCHIC staff can access submissions and photographs. We use infrastructure and email service providers to process information on our behalf. We do not publicly display your photos or create product listings merely because you submitted them.</p><h2>How do we use it?</h2><p>We use your information to review item eligibility, communicate with you and maintain operational records. An item submission does not authorize us to sell your property. Separate terms are required before consignment.</p><h2>Storage and security</h2><p>Photos are held in restricted storage, and staff access requires authentication. No Internet service is risk-free. Do not upload payment cards, identification documents or other unnecessary personal information.</p><h2>Your choices</h2><p>You may request information about your submission, correction or deletion through the reply address provided in our communications. Some records may need to be retained under applicable law.</p>`;
 const terms=`<h1>Submission Terms</h1><p class="draft-flag">Pilot terms: These are initial-intake conditions only, not a final consignment contract. Obtain Florida legal review before launch.</p><h2>Free initial assessment</h2><p>Uploading an item for review is free, non-binding and does not guarantee acceptance, authenticity, estimated resale price or eventual sale.</p><h2>Ownership and images</h2><p>By submitting, you confirm that you own the item or are authorized to propose its consignment. You authorize SHUKCHIC to review your photos solely for assessment and follow-up. Please disclose known defects and authenticity concerns.</p><h2>Do not ship before approval</h2><p>SHUKCHIC does not assume possession, risk of loss or responsibility for merchandise merely because photos have been submitted. Do not ship merchandise until written acceptance, shipping instructions and a separate consignment agreement have been agreed.</p><h2>Further terms</h2><p>Commission, pricing, item returns, insured shipment, storage, inspection, payouts and unsold-item arrangements are specified in the separate agreement, if you choose to proceed.</p>`;
 if(route==='/submit'){$('#homeView').hidden=true;$('#submitView').hidden=false;initForm();}

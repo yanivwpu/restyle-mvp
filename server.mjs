@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS submissions (
  received_verified INTEGER NOT NULL DEFAULT 0, email_status TEXT NOT NULL DEFAULT 'PENDING',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS contact_messages (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+ topic TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL,
+ email_status TEXT NOT NULL DEFAULT 'PENDING'
+);
+CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at DESC);
 CREATE TABLE IF NOT EXISTS photos (
  id TEXT PRIMARY KEY, submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
  filename TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL
@@ -386,6 +392,49 @@ async function handle(req,res){
    setCookie(res,token());return json(res,200,{ok:true});
  }
  if(req.method==='POST'&&p==='/api/admin/logout'){setCookie(res,'',true);return json(res,200,{ok:true});}
+ // Public contact inquiries are persisted even before production email is enabled.
+ // An authenticated inbox ensures contact requests aren't lost if Resend is unavailable.
+ if(req.method==='POST'&&p==='/api/contact'){
+  if(!throttle(req,'contact',4,60*60_000))return problem(res,429,'Too many messages. Please try again later.');
+  const b=await readJson(req,6000);
+  if(b.website)return json(res,200,{ok:true}); // spam honeypot
+  const name=clean(b.name,100),email=clean(b.email,254).toLowerCase(),
+   topic=clean(b.topic,80),message=clean(b.message,3000);
+  if(name.length<2||!validEmail(email)||message.length<10||message.length>3000||
+     !['General inquiry','Consignment question','Existing submission','Other'].includes(topic))
+   return problem(res,400,'Enter your name, valid email, topic and message (10–3000 characters).');
+  const id=crypto.randomUUID();
+  db.prepare('INSERT INTO contact_messages(id,name,email,topic,message,created_at) VALUES (?,?,?,?,?,?)')
+   .run(id,name,email,topic,message,now());
+  if(MAIL_ENABLED&&validEmail(ADMIN_NOTIFY_EMAIL)){
+   try{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6500);
+    let response;
+    try{
+     response=await fetch('https://api.resend.com/emails',{method:'POST',
+      headers:{Authorization:'Bearer '+RESEND_API_KEY,'Content-Type':'application/json',
+        'Idempotency-Key':'shukchic-contact-'+id},
+      body:JSON.stringify({from:EMAIL_FROM,to:[ADMIN_NOTIFY_EMAIL],
+       reply_to:email,subject:'SHUKCHIC contact: '+topic,
+       html:'<h2>New SHUKCHIC inquiry</h2><p><b>From:</b> '+htmlEscape(name)+
+        ' ('+htmlEscape(email)+')</p><p><b>Topic:</b> '+htmlEscape(topic)+
+        '</p><p style="white-space:pre-wrap">'+htmlEscape(message)+'</p>'}),
+      signal:controller.signal});
+    }finally{clearTimeout(timer);}
+    db.prepare('UPDATE contact_messages SET email_status=? WHERE id=?')
+     .run(response.ok?'SENT':'FAILED',id);
+   }catch{
+    db.prepare("UPDATE contact_messages SET email_status='FAILED' WHERE id=?").run(id);
+   }
+  }else db.prepare("UPDATE contact_messages SET email_status='SETUP_REQUIRED' WHERE id=?").run(id);
+  return json(res,200,{ok:true});
+ }
+ if(req.method==='GET'&&p==='/api/admin/contact'){
+  if(!admin(req))return problem(res,401,'Staff login required.');
+  return json(res,200,{messages:db.prepare(
+   'SELECT id,name,email,topic,message,created_at,email_status FROM contact_messages ORDER BY created_at DESC LIMIT 100'
+  ).all()});
+ }
  if(req.method==='POST'&&p==='/api/submissions'){
    if(!throttle(req,'submit',7,60*60_000))return problem(res,429,'Too many submissions. Please try later.');
    const b=await readJson(req);
