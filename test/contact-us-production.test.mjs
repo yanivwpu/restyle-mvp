@@ -31,3 +31,14 @@ test('public eBay shopping link uses current SHUKCHIC seller identity',()=>{
  assert.match(html,/https:\/\/www\.ebay\.com\/usr\/shukchic/);
  assert.doesNotMatch(html,/_ssn=ssammikat99u2/);
 });
+
+test('contact notifications retain safe provider diagnostics for staff',()=>{
+ const server=read('server.mjs'),staff=read('public/assets/contact-admin.js');
+ assert.match(server,/ALTER TABLE contact_messages ADD COLUMN email_error/);
+ assert.match(server,/Resend HTTP /);
+ assert.match(server,/response\.status/);
+ assert.match(server,/SELECT id,name,email,topic,message,created_at,email_status,email_error/);
+ assert.match(staff,/message\.email_error/);
+ assert.doesNotMatch(server,/diagnostic\s*=\s*await response\.text\(/);
+ assert.doesNotThrow(()=>new Function(staff));
+});
