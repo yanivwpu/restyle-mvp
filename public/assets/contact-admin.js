@@ -11,7 +11,7 @@
    const item=document.createElement('article');item.className='contact-inbox-item';
    const heading=document.createElement('strong');heading.textContent=message.topic+' — '+message.name;
    const meta=document.createElement('p');meta.className='detail-meta';
-   meta.textContent=new Date(message.created_at).toLocaleString()+' · Notification: '+message.email_status;
+   meta.textContent=new Date(message.created_at).toLocaleString()+' · Notification: '+message.email_status+(message.email_error?' · '+message.email_error:'');
    const email=document.createElement('a');email.href='mailto:'+encodeURIComponent(message.email);
    email.textContent=message.email;
    const body=document.createElement('p');body.className='contact-inbox-message';body.textContent=message.message;

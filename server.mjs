@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE TABLE IF NOT EXISTS contact_messages (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
  topic TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL,
- email_status TEXT NOT NULL DEFAULT 'PENDING'
+ email_status TEXT NOT NULL DEFAULT 'PENDING', email_error TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at DESC);
 CREATE TABLE IF NOT EXISTS photos (
@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS admin_events (
 CREATE INDEX IF NOT EXISTS idx_submissions_created ON submissions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_photos_submission ON photos(submission_id);
 `);
+
+
+// Existing production volume may predate the diagnostic column.
+if(!db.prepare('PRAGMA table_info(contact_messages)').all().some(x=>x.name==='email_error'))
+ db.exec("ALTER TABLE contact_messages ADD COLUMN email_error TEXT NOT NULL DEFAULT ''");
 
 function json(res, status, obj, extras={}) {const payload=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extras});res.end(payload);}
 function problem(res,status,message) {json(res,status,{error:message});}
@@ -421,18 +426,31 @@ async function handle(req,res){
         '</p><p style="white-space:pre-wrap">'+htmlEscape(message)+'</p>'}),
       signal:controller.signal});
     }finally{clearTimeout(timer);}
-    db.prepare('UPDATE contact_messages SET email_status=? WHERE id=?')
-     .run(response.ok?'SENT':'FAILED',id);
-   }catch{
-    db.prepare("UPDATE contact_messages SET email_status='FAILED' WHERE id=?").run(id);
+    // Store only a bounded provider error category; never store keys, addresses,
+    // raw response bodies, or arbitrary provider message text.
+    let diagnostic='';
+    if(!response.ok){
+     let code='provider_rejected';
+     try{
+      const payload=await response.json();
+      const kind=String(payload?.name||'').toLowerCase();
+      if(['validation_error','invalid_api_key','missing_api_key','restricted_api_key','application_error','rate_limit_exceeded','not_found','invalid_from_address','invalid_to_address','domain_not_verified'].includes(kind))code=kind;
+     }catch{}
+     diagnostic='Resend HTTP '+response.status+' ('+code+')';
+    }
+    db.prepare('UPDATE contact_messages SET email_status=?,email_error=? WHERE id=?')
+     .run(response.ok?'SENT':'FAILED',diagnostic,id);
+   }catch(error){
+    const reason=error?.name==='AbortError'?'Resend timeout':'Resend network or runtime error';
+    db.prepare("UPDATE contact_messages SET email_status='FAILED',email_error=? WHERE id=?").run(reason,id);
    }
-  }else db.prepare("UPDATE contact_messages SET email_status='SETUP_REQUIRED' WHERE id=?").run(id);
+  }else db.prepare("UPDATE contact_messages SET email_status='SETUP_REQUIRED',email_error='Missing or invalid email configuration' WHERE id=?").run(id);
   return json(res,200,{ok:true});
  }
  if(req.method==='GET'&&p==='/api/admin/contact'){
   if(!admin(req))return problem(res,401,'Staff login required.');
   return json(res,200,{messages:db.prepare(
-   'SELECT id,name,email,topic,message,created_at,email_status FROM contact_messages ORDER BY created_at DESC LIMIT 100'
+   'SELECT id,name,email,topic,message,created_at,email_status,email_error FROM contact_messages ORDER BY created_at DESC LIMIT 100'
   ).all()});
  }
  if(req.method==='POST'&&p==='/api/submissions'){
