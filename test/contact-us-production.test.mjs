@@ -42,3 +42,15 @@ test('contact notifications retain safe provider diagnostics for staff',()=>{
  assert.doesNotMatch(server,/diagnostic\s*=\s*await response\.text\(/);
  assert.doesNotThrow(()=>new Function(staff));
 });
+
+test('production admin copy is launch-ready without changing staging labeling',()=>{
+ const page=read('public/admin.html'), admin=read('public/assets/admin.js'), queue=read('public/assets/approved-listings.js');
+ assert.match(page,/id="workspaceEnvironmentLabel"/);
+ assert.match(admin,/productionWorkspace/);
+ assert.match(admin,/textContent='PRODUCTION'/);
+ assert.match(admin,/Only a staff member can explicitly publish/);
+ assert.doesNotMatch(admin,/separately controlled pilot approval/);
+ assert.doesNotMatch(queue,/disabled for this pilot/);
+ assert.doesNotThrow(()=>new Function(admin));
+ assert.doesNotThrow(()=>new Function(queue));
+});
