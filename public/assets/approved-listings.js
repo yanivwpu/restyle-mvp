@@ -117,7 +117,7 @@
      offerSetup.disabled=false;
      openLiveReview([...batchSelected][0]);
     }else{
-     batchResult.textContent='Unpublished eBay offers are ready. Live publishing is not yet enabled for this pilot; no action is needed from Samantha.';
+     batchResult.textContent='Unpublished eBay offers are ready. Live publishing is disabled in this environment.';
     }
     return;
    }
@@ -207,7 +207,7 @@
     offerProgress.textContent='Unpublished offers are ready for Samantha’s final publishing confirmation.';
     openLiveReview(parcels[0].id);
    }else{
-    offerProgress.textContent=completed+' unpublished offers saved in eBay. Live publishing is disabled for this pilot; no buyer can purchase them yet.';
+    offerProgress.textContent=completed+' unpublished offers saved in eBay. Live publishing is disabled in this environment; no buyer can purchase them yet.';
    }
   }catch(err){offerProgress.textContent='Offers prepared, but publish readiness could not be verified: '+err.message;}
  });
