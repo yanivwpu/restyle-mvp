@@ -65,6 +65,10 @@ export function createSigning({db,dir,baseUrl,queueMail,sendPending,audit}){
   const futureTerms=base=>{
     // Remove the obsolete marketplace-by-marketplace consent requirement when present.
     const normalized=base.replace(/Other marketplaces require Consignor[\u2019']s\s+prior written agreement\.?/gi,'');
+    // Do not append the legacy marketing consent to an agreement that already
+    // includes its own approved sales-channel/marketing authorization section.
+    if(/(?:^|\n)\s*8\.\s*Sales channels and marketing authorization\b/i.test(normalized))
+      return normalized.trim();
     return normalized.trim()+'\n\n'+channelsClause;
   };
   const shipping=String(process.env.CONSIGNMENT_SHIPPING_INSTRUCTIONS||'').trim();
