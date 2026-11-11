@@ -191,6 +191,26 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    const record=db.prepare('SELECT business,agreement_text,agreement_sha,signature,signed_at,commission_percent FROM merchant_accounts WHERE id=?').get(user.id);
    return send(200,{agreement:record}),true;
   }
+  if(method==='POST'&&p==='/api/merchant/sync-shipping'){
+   const tasks=db.prepare('SELECT id,ebay_order_id,status FROM merchant_shipping_tasks WHERE merchant_id=? ORDER BY created_at DESC LIMIT 15').all(user.id);
+   if(!tasks.length)return send(200,{ok:true,updated:0,checked:0}),true;
+   let token;try{token=await getEbayToken();}catch{return send(503,{error:'eBay shipment tracking unavailable right now.'}),true;}
+   let updated=0;
+   for(const task of tasks){
+    try{
+     const response=await fetch('https://api.ebay.com/sell/fulfillment/v1/order/'+encodeURIComponent(task.ebay_order_id)+'/shipping_fulfillment',{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(6000)});
+     if(!response.ok)continue;
+     const data=await response.json(),fulfillments=Array.isArray(data.fulfillments)?data.fulfillments:[];
+     const shipment=fulfillments.find(x=>x.shipmentTrackingNumber||x.trackingNumber);
+     if(!shipment)continue;
+     const tracking=safe(shipment.shipmentTrackingNumber||shipment.trackingNumber,130);
+     if(!tracking)continue;
+     db.prepare("UPDATE merchant_shipping_tasks SET tracking=?,status=CASE WHEN status='READY_TO_SHIP' THEN 'SHIPPED' ELSE status END,shipped_at=COALESCE(shipped_at,?) WHERE id=? AND merchant_id=?").run(tracking,new Date().toISOString(),task.id,user.id);
+     updated++;
+    }catch{}
+   }
+   return send(200,{ok:true,updated,checked:tasks.length}),true;
+  }
   if(method==='GET'&&p==='/api/merchant/items'){
    const items=db.prepare("SELECT s.id,s.brand,s.category,s.condition,s.description,s.sku,s.status,s.created_at,s.received_verified,(SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s JOIN merchant_items mi ON mi.submission_id=s.id WHERE mi.merchant_id=? ORDER BY s.created_at DESC LIMIT 200").all(user.id);
    const tasks=db.prepare('SELECT id,submission_id,ebay_order_id,order_total_cents,carrier,tracking,status,created_at,shipped_at FROM merchant_shipping_tasks WHERE merchant_id=? ORDER BY created_at DESC LIMIT 100').all(user.id);
