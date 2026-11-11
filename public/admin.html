@@ -9,7 +9,7 @@
  <button type="button" class="small-button" id="merchantRefreshApplications">Refresh applications</button>
  <div id="merchantPartnerList" role="region" aria-label="Merchant applications"></div>
  <details id="merchantShippingAssignment"><summary>Attach an eBay shipping QR / label to a merchant sale</summary>
-  <p>Purchase the label in Seller Hub first. eBay must confirm the order is paid and the item SKU matches this merchant before a label can be assigned.</p>
+  <p>Purchase the label in Seller Hub first. <strong>Verify the label's FROM address matches the boutique's actual ship-from address</strong> before providing it. eBay must confirm the order is paid and the item SKU matches this merchant before a label can be assigned. Only one-item orders are supported in this initial workflow.</p>
   <form id="merchantAssignShippingForm">
    <label>Merchant item reference <input name="submissionId" required placeholder="RS-…"></label>
    <label>eBay order ID <input name="orderId" required></label>
