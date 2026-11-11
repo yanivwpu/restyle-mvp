@@ -1,0 +1,151 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const safe=(value,max=300)=>String(value??'').trim().slice(0,max);
+const validEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)&&value.length<=254;
+const sha=value=>crypto.createHash('sha256').update(value).digest('hex');
+function equal(a,b){const x=Buffer.from(sha(String(a))),y=Buffer.from(sha(String(b)));return crypto.timingSafeEqual(x,y);}
+const fail=(code,message)=>Object.assign(new Error(message),{status:code});
+const stringify=(res,status,value,headers={})=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers});res.end(JSON.stringify(value));};
+function clientCookie(req,name){const value=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='));return value?value.slice(name.length+1):'';}
+function passwordHash(password){const salt=crypto.randomBytes(16).toString('hex');return salt+':'+crypto.scryptSync(password,salt,64).toString('hex');}
+function checkPassword(password,hash){if(!hash?.includes(':'))return false;const [salt,stored]=hash.split(':');if(!/^[a-f0-9]{32}$/.test(salt)||!/^[a-f0-9]{128}$/.test(stored))return false;const attempt=crypto.scryptSync(password,salt,64);return crypto.timingSafeEqual(attempt,Buffer.from(stored,'hex'));}
+const digit=(n)=>Number.isFinite(Number(n))?Number(n):NaN;
+
+export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',baseUrl='',getEbayToken}){
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_applications(id TEXT PRIMARY KEY,business TEXT NOT NULL,contact TEXT NOT NULL,email TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'APPLIED',created_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_accounts(id TEXT PRIMARY KEY,application_id TEXT NOT NULL UNIQUE REFERENCES merchant_applications(id),business TEXT NOT NULL,email TEXT NOT NULL UNIQUE,contact TEXT NOT NULL,city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,password_hash TEXT NOT NULL DEFAULT '',commission_percent REAL NOT NULL,agreement_text TEXT NOT NULL,agreement_sha TEXT NOT NULL,signature TEXT NOT NULL DEFAULT '',signed_at TEXT,signature_ip_hash TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_invites(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),secret_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,used_at TEXT,created_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_items(merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),submission_id TEXT NOT NULL UNIQUE REFERENCES submissions(id),stock_confirmed INTEGER NOT NULL,created_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_shipping_tasks(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),submission_id TEXT NOT NULL REFERENCES submissions(id),ebay_order_id TEXT NOT NULL UNIQUE,order_total_cents INTEGER NOT NULL,carrier TEXT NOT NULL,label_filename TEXT NOT NULL,label_mime TEXT NOT NULL,tracking TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'READY_TO_SHIP',created_at TEXT NOT NULL,shipped_at TEXT)");
+ const addCookie=(res,value,remove=false)=>res.setHeader('Set-Cookie','shukchic_merchant='+value+'; HttpOnly; Path=/; SameSite=Lax; '+(process.env.NODE_ENV==='production'?'Secure; ':'')+'Max-Age='+(remove?0:30*86400));
+ const makeSession=id=>{const payload=Buffer.from(JSON.stringify({id,exp:Date.now()+30*86400_000,v:1})).toString('base64url');return payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');};
+ function logged(req){
+  const token=clientCookie(req,'shukchic_merchant');const [p,signature]=token.split('.');if(!p||!signature||p.length>500)return null;
+  const expected=crypto.createHmac('sha256',sessionSecret).update(p).digest('base64url');if(!equal(expected,signature))return null;
+  try{const obj=JSON.parse(Buffer.from(p,'base64url').toString('utf8'));if(obj.v!==1||obj.exp<Date.now())return null;
+   return db.prepare('SELECT id,business,email,contact,city,state,postal_code,commission_percent,signed_at FROM merchant_accounts WHERE id=? AND active=1').get(obj.id)||null;
+  }catch{return null;}
+ }
+ function invite(token){
+  if(!/^[A-Za-z0-9_-]{32,80}$/.test(String(token||'')))return null;
+  return db.prepare('SELECT i.id AS invite_id,i.expires_at,i.used_at,m.id,m.business,m.contact,m.email,m.commission_percent,m.agreement_text,m.agreement_sha FROM merchant_invites i JOIN merchant_accounts m ON m.id=i.merchant_id WHERE i.secret_hash=?').get(sha(token));
+ }
+ async function mail(to,subject,body,id){
+  if(!mailEnabled)return false;
+  try{const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+resendKey,'Content-Type':'application/json','Idempotency-Key':id},body:JSON.stringify({from:emailFrom,to:[to],subject,html:body}),signal:AbortSignal.timeout(9000)});return response.ok;}catch{return false;}
+ }
+ const responseAccount=m=>({business:m.business,contact:m.contact,email:m.email,city:m.city,state:m.state,postalCode:m.postal_code,commissionPercent:m.commission_percent});
+ function owner(req,res){const u=logged(req);if(!u){stringify(res,401,{error:'Merchant sign-in required.'});return null;}return u;}
+ async function handle(req,res,url,helpers){
+  const p=url.pathname,method=req.method||'GET',send=(status,v)=>stringify(res,status,v);
+  const body=async(limit=26000)=>helpers.readJson(req,limit);
+  const publicOp=['/api/partners/apply','/api/merchant/invite','/api/merchant/activate','/api/merchant/login'].includes(p);
+  if(!(p.startsWith('/api/partners/')||p.startsWith('/api/merchant/')||p.startsWith('/api/admin/partners')||p==='/api/admin/merchant-orders'))return false;
+  if(method==='POST'&&!helpers.checkOrigin(req))throw fail(403,'Request origin not permitted.');
+  if(method==='POST'&&!helpers.throttle(req,'merchant_'+p,publicOp?8:40,3600_000))throw fail(429,'Too many requests. Please try again later.');
+  if(method==='POST'&&p==='/api/partners/apply'){
+   const x=await body(7000);if(x.website)return send(200,{ok:true}),true;
+   const business=safe(x.business,120),contact=safe(x.contact,100),email=safe(x.email,254).toLowerCase(),phone=safe(x.phone,40),city=safe(x.city,100),state=safe(x.state,50),postal=safe(x.postalCode,18),description=safe(x.description,1300);
+   if(business.length<2||contact.length<2||!validEmail(email)||city.length<2||state.length<2||postal.length<4||!x.confirmBusinessInventory)return send(400,{error:'Complete the business details and confirm you control the stock.'}),true;
+   const id=crypto.randomUUID(),time=new Date().toISOString();
+   db.prepare('INSERT INTO merchant_applications(id,business,contact,email,phone,city,state,postal_code,description,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,business,contact,email,phone,city,state,postal,description,time);
+   return send(201,{ok:true,reference:id}),true;
+  }
+  if(method==='GET'&&p==='/api/merchant/invite'){
+   const info=invite(url.searchParams.get('token'));if(!info||info.used_at||Date.parse(info.expires_at)<Date.now())return send(404,{error:'Invitation unavailable or expired.'}),true;
+   return send(200,{business:info.business,contact:info.contact,email:info.email,commissionPercent:info.commission_percent,agreementText:info.agreement_text,agreementHash:info.agreement_sha}),true;
+  }
+  if(method==='POST'&&p==='/api/merchant/activate'){
+   const b=await body(15000),info=invite(b.token);
+   if(!info||info.used_at||Date.parse(info.expires_at)<Date.now())return send(410,{error:'Invitation expired or already used.'}),true;
+   const signature=safe(b.signature,120),password=String(b.password||'');
+   if(!b.accept||!b.confirmBusinessInventory||signature.length<3||password.length<12||password.length>150)return send(400,{error:'Review the terms, sign your name, verify your inventory and choose a password of at least 12 characters.'}),true;
+   const stamp=new Date().toISOString(),hash=passwordHash(password);
+   db.exec('BEGIN IMMEDIATE');try{
+    const change=db.prepare("UPDATE merchant_invites SET used_at=? WHERE id=? AND used_at IS NULL").run(stamp,info.invite_id);
+    if(change.changes!==1)throw fail(409,'Invitation already accepted.');
+    db.prepare('UPDATE merchant_accounts SET password_hash=?,signature=?,signed_at=?,signature_ip_hash=?,active=1 WHERE id=?').run(hash,signature,stamp,sha(helpers.ipOf(req)+':'+sessionSecret),info.id);
+    db.prepare("UPDATE merchant_applications SET status='ACTIVE' WHERE id=(SELECT application_id FROM merchant_accounts WHERE id=?)").run(info.id);
+    db.exec('COMMIT');
+   }catch(err){db.exec('ROLLBACK');throw err;}
+   addCookie(res,makeSession(info.id));return send(200,{ok:true}),true;
+  }
+  if(method==='POST'&&p==='/api/merchant/login'){
+   const b=await body(2500),email=safe(b.email,254).toLowerCase(),m=db.prepare('SELECT id,password_hash,active FROM merchant_accounts WHERE email=?').get(email);
+   if(!m||!m.active||!checkPassword(String(b.password||''),m.password_hash))return send(401,{error:'Incorrect merchant credentials.'}),true;
+   addCookie(res,makeSession(m.id));return send(200,{ok:true}),true;
+  }
+  if(method==='POST'&&p==='/api/merchant/logout'){addCookie(res,'',true);return send(200,{ok:true}),true;}
+  if(p.startsWith('/api/admin/')){
+   if(!helpers.admin)return send(401,{error:'Admin sign-in required.'}),true;
+   if(method==='GET'&&p==='/api/admin/partners'){
+    const applications=db.prepare('SELECT * FROM merchant_applications ORDER BY created_at DESC LIMIT 200').all();
+    const merchants=db.prepare('SELECT id,business,email,city,state,postal_code,commission_percent,signed_at,active FROM merchant_accounts ORDER BY created_at DESC').all();
+    return send(200,{applications,merchants}),true;
+   }
+   const approve=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/invite$/);
+   if(method==='POST'&&approve){
+    const a=db.prepare('SELECT * FROM merchant_applications WHERE id=?').get(approve[1]);if(!a)return send(404,{error:'Application not found.'}),true;
+    const b=await body(20000),pct=digit(b.commissionPercent),terms=safe(b.agreementText,12500);
+    if(!Number.isInteger(pct)||pct<0||pct>80||terms.length<350||!b.reviewedTerms)return send(400,{error:'Enter reviewed merchant agreement text (350+ characters) and a confirmed SHUKCHIC commission percentage of 0–80.'}),true;
+    let m=db.prepare('SELECT * FROM merchant_accounts WHERE application_id=?').get(a.id),stamp=new Date().toISOString();
+    if(m?.signed_at)return send(409,{error:'Partner already signed. Changes require a new agreement process.'}),true;
+    if(!m){const duplicate=db.prepare('SELECT id FROM merchant_accounts WHERE email=?').get(a.email);if(duplicate)return send(409,{error:'Merchant email already registered.'}),true;
+      const id=crypto.randomUUID();db.prepare('INSERT INTO merchant_accounts(id,application_id,business,email,contact,city,state,postal_code,commission_percent,agreement_text,agreement_sha,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,a.id,a.business,a.email,a.contact,a.city,a.state,a.postal_code,pct,terms,sha(terms),stamp);
+      m=db.prepare('SELECT * FROM merchant_accounts WHERE id=?').get(id);
+    }else{
+      db.prepare('UPDATE merchant_accounts SET commission_percent=?,agreement_text=?,agreement_sha=? WHERE id=?').run(pct,terms,sha(terms),m.id);
+    }
+    const raw=crypto.randomBytes(32).toString('base64url'),id=crypto.randomUUID(),expires=new Date(Date.now()+7*86400_000).toISOString();
+    db.prepare('INSERT INTO merchant_invites(id,merchant_id,secret_hash,expires_at,created_at) VALUES(?,?,?,?,?)').run(id,m.id,sha(raw),expires,stamp);
+    db.prepare("UPDATE merchant_applications SET status='INVITED' WHERE id=?").run(a.id);
+    const link=baseUrl+'/merchant?invite='+encodeURIComponent(raw);
+    const sent=await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
+    return send(200,{ok:true,emailSent:sent,inviteUrl:link,expiresAt:expires}),true;
+   }
+   return send(404,{error:'Unknown partner admin action.'}),true;
+  }
+  if(method==='GET'&&p==='/api/merchant/session'){
+   const u=logged(req);return send(200,{authenticated:!!u,merchant:u?responseAccount(u):null}),true;
+  }
+  const user=owner(req,res);if(!user)return true;
+  if(method==='GET'&&p==='/api/merchant/items'){
+   const items=db.prepare("SELECT s.id,s.brand,s.category,s.condition,s.description,s.sku,s.status,s.created_at,s.received_verified,(SELECT COUNT(*) FROM photos p WHERE p.submission_id=s.id) AS photo_count FROM submissions s JOIN merchant_items mi ON mi.submission_id=s.id WHERE mi.merchant_id=? ORDER BY s.created_at DESC LIMIT 200").all(user.id);
+   const tasks=db.prepare('SELECT id,submission_id,ebay_order_id,order_total_cents,carrier,tracking,status,created_at,shipped_at FROM merchant_shipping_tasks WHERE merchant_id=? ORDER BY created_at DESC LIMIT 100').all(user.id);
+   return send(200,{items,orders:tasks,commissionPercent:user.commission_percent,merchant:responseAccount(user)}),true;
+  }
+  if(method==='POST'&&p==='/api/merchant/items'){
+   const b=await body(26*1024*1024);
+   const brand=safe(b.brand,100),category=safe(b.category,60),condition=safe(b.condition,60),description=safe(b.description,1800);
+   if(brand.length<2||!helpers.categories.has(category)||!helpers.conditions.has(condition)||b.stockConfirmed!==true)return send(400,{error:'Choose category, brand, condition and confirm this item is in your stock.'}),true;
+   if(!Array.isArray(b.photos)||!b.photos.length||b.photos.length>6)return send(400,{error:'Upload 1–6 product photos.'}),true;
+   const images=b.photos.map(helpers.parsePhoto),id='RS-'+crypto.randomBytes(5).toString('hex').toUpperCase(),stamp=new Date().toISOString(),written=[];
+   try{db.exec('BEGIN IMMEDIATE');
+    db.prepare("INSERT INTO submissions(id,first_name,email,phone,category,brand,condition,description,status,email_status,intake_source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'SUBMITTED','NOT_APPLICABLE','MERCHANT',?,?)").run(id,user.business,user.email,'',category,brand,condition,description,stamp,stamp);
+    db.prepare('INSERT INTO merchant_items(merchant_id,submission_id,stock_confirmed,created_at) VALUES(?,?,1,?)').run(user.id,id,stamp);
+    for(const img of images){const pid=crypto.randomUUID(),filename=pid+'.'+img.ext;fs.writeFileSync(path.join(uploadDir,filename),img.bytes,{flag:'wx',mode:0o600});written.push(filename);db.prepare('INSERT INTO photos(id,submission_id,filename,mime,size) VALUES(?,?,?,?,?)').run(pid,id,filename,img.mime,img.bytes.length);}
+    db.prepare('INSERT INTO admin_events(submission_id,event,created_at) VALUES(?,?,?)').run(id,'MERCHANT DROP-SHIP ITEM SUBMITTED · INVENTORY HELD BY PARTNER',stamp);
+    db.exec('COMMIT');
+   }catch(err){try{db.exec('ROLLBACK');}catch{}for(const name of written){try{fs.unlinkSync(path.join(uploadDir,name));}catch{}}throw err;}
+   return send(201,{ok:true,id}),true;
+  }
+  if(method==='GET'&&p.startsWith('/api/merchant/shipping-label/')){
+   const id=p.slice('/api/merchant/shipping-label/'.length);
+   if(!/^[a-f0-9-]{36}$/.test(id))return send(404,{error:'Not found.'}),true;
+   const task=db.prepare('SELECT * FROM merchant_shipping_tasks WHERE id=? AND merchant_id=?').get(id,user.id);if(!task)return send(404,{error:'Not found.'}),true;
+   const file=path.resolve(uploadDir,path.basename(task.label_filename));if(!file.startsWith(path.resolve(uploadDir)+path.sep))return send(404,{error:'Not found.'}),true;
+   res.writeHead(200,{'Content-Type':task.label_mime,'Content-Disposition':"inline; filename=shipping-label",'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(fs.readFileSync(file));return true;
+  }
+  if(method==='POST'&&p.startsWith('/api/merchant/shipping/')){
+   const id=p.slice('/api/merchant/shipping/'.length),task=db.prepare('SELECT id,status FROM merchant_shipping_tasks WHERE id=? AND merchant_id=?').get(id,user.id);
+   if(!task)return send(404,{error:'Shipping task not found.'}),true;
+   if(task.status!=='READY_TO_SHIP')return send(409,{error:'Already marked handed to carrier.'}),true;
+   db.prepare("UPDATE merchant_shipping_tasks SET status='DROPPED_OFF',shipped_at=? WHERE id=?").run(new Date().toISOString(),id);
+   return send(200,{ok:true,requiresVerification:true}),true;
+  }
+  return send(404,{error:'Unknown merchant action.'}),true;
+ }
+ return {handle,logged,applicationCount:()=>db.prepare("SELECT COUNT(*) AS n FROM merchant_applications WHERE status='APPLIED'").get().n};
+}
