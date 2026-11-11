@@ -3,19 +3,19 @@
 <meta name="robots" content="noindex,nofollow"><title>SHUKCHIC — Add inventory</title>
 <link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css">
-<link rel="stylesheet" href="/assets/admin-new-item.css"><script defer src="/assets/admin-new-item.js"></script></head>
+<link rel="stylesheet" href="/assets/admin-new-item.css?v=20261110-spacing"><script defer src="/assets/admin-new-item.js"></script></head>
 <body class="admin-body">
 <header class="admin-header"><a href="/admin" class="brand"><img class="brand-logo" src="/assets/shukchic-logo.svg" alt="SHUKCHIC"></a><span class="admin-heading">Add inventory</span><a class="small-button" href="/admin">Back to dashboard</a></header>
 <main class="staff-new-item">
 <div class="staff-new-intro"><span class="eyebrow">INTERNAL INVENTORY</span><h1>Add an item</h1><p>Quick entry for SHUKCHIC-owned inventory. No customer contact information, customer agreement, or consignment emails.</p></div>
 <form id="staffItemForm" class="staff-form">
 <div class="staff-fields">
-<label>Category <span aria-hidden="true">*</span><select name="category" required><option value="">Choose category</option><option>Handbags</option><option>Clothing</option><option>Shoes</option><option>Jewelry</option><option>Accessories</option><option>Other</option></select></label>
-<label>Brand / designer <span aria-hidden="true">*</span><input name="brand" maxlength="100" required placeholder="Brand or designer"></label>
-<label>Condition <span aria-hidden="true">*</span><select name="condition" required><option value="">Choose condition</option><option>New with tags</option><option>New without tags</option><option>Like new</option><option>Excellent</option><option>Good</option><option>Fair</option></select></label>
-<label>Item details <span class="optional">(optional)</span><textarea name="description" rows="3" maxlength="1800" placeholder="Color, size, flaws, material, notes…"></textarea></label>
+<label><span class="staff-field-title">Category <span aria-hidden="true" class="staff-required">*</span></span><select name="category" required><option value="">Choose category</option><option>Handbags</option><option>Clothing</option><option>Shoes</option><option>Jewelry</option><option>Accessories</option><option>Other</option></select></label>
+<label><span class="staff-field-title">Brand / designer <span aria-hidden="true" class="staff-required">*</span></span><input name="brand" maxlength="100" required placeholder="Brand or designer"></label>
+<label><span class="staff-field-title">Condition <span aria-hidden="true" class="staff-required">*</span></span><select name="condition" required><option value="">Choose condition</option><option>New with tags</option><option>New without tags</option><option>Like new</option><option>Excellent</option><option>Good</option><option>Fair</option></select></label>
+<label><span class="staff-field-title">Item details <span class="optional">(optional)</span></span><textarea name="description" rows="3" maxlength="1800" placeholder="Color, size, flaws, material, notes…"></textarea></label>
 </div>
-<div class="staff-photo-header"><h2>Photos <span class="optional">(optional now)</span></h2><p>Add up to 6 photos. You can also upload warehouse photos later, but a photo is required before creating an eBay listing draft.</p></div>
+<div class="staff-photo-header"><h2><span>Photos</span> <span class="staff-optional-note">Optional at this stage</span></h2><p>Add up to 6 photos. You can also upload warehouse photos later, but a photo is required before creating an eBay listing draft.</p></div>
 <div id="staffDropZone" class="staff-drop" role="button" tabindex="0"><strong>Click or drop photos here</strong><span>JPG, PNG, WebP • up to 6</span><input id="staffPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></div>
 <div id="staffPreviews" class="staff-previews" aria-live="polite"></div>
 <div id="staffError" class="admin-error" role="alert" hidden></div>
