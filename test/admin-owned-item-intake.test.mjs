@@ -41,3 +41,10 @@ test('admin detail explains ownership and does not bind missing customer email a
  assert.match(admin,/\$\('#retryEmail'\)\?\.addEventListener/);
  assert.doesNotThrow(()=>new Function(admin));
 });
+test('internal item form labels group their required and optional markers',()=>{
+ const html=read('public/admin-new-item.html'),css=read('public/assets/admin-new-item.css');
+ for(const name of ['Category','Brand / designer','Condition','Item details'])assert.match(html,new RegExp('staff-field-title[^>]*>'+name.replace('/','\\/') ));
+ assert.match(html,/staff-optional-note/);
+ assert.match(css,/\.staff-photo-header h2\{display:flex/);
+ assert.match(css,/\.staff-fields \.staff-field-title\{display:inline-flex/);
+});
