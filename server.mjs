@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS submissions (
  status TEXT NOT NULL DEFAULT 'SUBMITTED', admin_notes TEXT NOT NULL DEFAULT '',
  estimate_cents INTEGER, tracking TEXT NOT NULL DEFAULT '', sku TEXT NOT NULL DEFAULT '', bin_location TEXT NOT NULL DEFAULT '',
  received_verified INTEGER NOT NULL DEFAULT 0, email_status TEXT NOT NULL DEFAULT 'PENDING',
- created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ intake_source TEXT NOT NULL DEFAULT 'CUSTOMER'
 );
 CREATE TABLE IF NOT EXISTS contact_messages (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
@@ -79,6 +80,9 @@ CREATE INDEX IF NOT EXISTS idx_photos_submission ON photos(submission_id);
 // Existing production volume may predate the diagnostic column.
 if(!db.prepare('PRAGMA table_info(contact_messages)').all().some(x=>x.name==='email_error'))
  db.exec("ALTER TABLE contact_messages ADD COLUMN email_error TEXT NOT NULL DEFAULT ''");
+
+if(!db.prepare('PRAGMA table_info(submissions)').all().some(x=>x.name==='intake_source'))
+ db.exec("ALTER TABLE submissions ADD COLUMN intake_source TEXT NOT NULL DEFAULT 'CUSTOMER'");
 
 function json(res, status, obj, extras={}) {const payload=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extras});res.end(payload);}
 function problem(res,status,message) {json(res,status,{error:message});}
@@ -129,7 +133,7 @@ function aiPhotoUrls(sub){
 }
 const ebayMapping=createEbayMapping({db,oauth:ebayOAuth,photoUrls:aiPhotoUrls});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
-function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
+function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/admin/new-item':'admin-new-item.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
 if(emailLogoPng.length<1000||emailLogoPng.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw Error('Invalid SHUKCHIC email PNG asset');
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
@@ -201,6 +205,7 @@ async function handle(req,res){
   return problem(res,405,'Method not allowed.');
  }
  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'restyle-mvp'});
+ if(req.method==='GET'&&p==='/admin/new-item'&&!admin(req))return problem(res,401,'Staff sign-in required. Open /admin first.');
  if(req.method==='GET'&&p==='/api/admin/session')return json(res,200,{authenticated:admin(req),emailConfigured:MAIL_ENABLED,agreementConfigured:signing.enabled});
  // Read-only eBay integration readiness; never treat API credentials as seller authorization.
  // Seller OAuth consent and encrypted refresh token storage must be completed before sync begins.
@@ -473,6 +478,29 @@ async function handle(req,res){
    return json(res,201,{ok:true,id,emailStatus:recorded.email_status});
  }
  if(p.startsWith('/api/admin/')&&!admin(req))return problem(res,401,'Admin login required.');
+ if(req.method==='POST'&&p==='/api/admin/owned-items'){
+  if(!checkOrigin(req))return problem(res,403,'Invalid request origin.');
+  if(!throttle(req,'staff_owned_item',15,60*60_000))return problem(res,429,'Too many item submissions.');
+  const b=await readJson(req);
+  const brand=clean(b.brand,100),category=clean(b.category,60),condition=clean(b.condition,60),description=clean(b.description,1800);
+  if(brand.length<2||!CATEGORIES.has(category)||!CONDITIONS.has(condition))
+   return problem(res,400,'Enter brand, category and condition.');
+  if(!Array.isArray(b.photos)||b.photos.length>6)
+   return problem(res,400,'Use up to six item photos.');
+  let images;try{images=b.photos.map(parsePhoto);}catch(err){return problem(res,400,err.message);}
+  const id='RS-'+crypto.randomBytes(5).toString('hex').toUpperCase(),created=[],stamp=now();
+  try{
+   db.exec('BEGIN IMMEDIATE');
+   db.prepare("INSERT INTO submissions(id,first_name,email,category,brand,condition,description,status,email_status,intake_source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,'RECEIVED','NOT_APPLICABLE','STAFF_OWNED',?,?)")
+     .run(id,'SHUKCHIC','',category,brand,condition,description,stamp,stamp);
+   for(const img of images){const pid=crypto.randomUUID(),filename=pid+'.'+img.ext;
+    fs.writeFileSync(path.join(UPLOAD_DIR,filename),img.bytes,{flag:'wx',mode:0o600});created.push(filename);
+    db.prepare('INSERT INTO photos(id,submission_id,filename,mime,size) VALUES (?,?,?,?,?)').run(pid,id,filename,img.mime,img.bytes.length);}
+   audit(id,'STAFF-OWNED INVENTORY CREATED - NO CUSTOMER AGREEMENT OR EMAIL');
+   db.exec('COMMIT');
+  }catch(err){try{db.exec('ROLLBACK');}catch{}for(const file of created){try{fs.unlinkSync(path.join(UPLOAD_DIR,file));}catch{}}throw err;}
+  return json(res,201,{ok:true,id,status:'RECEIVED'});
+ }
  // Unpublished eBay offer preparation. Explicit pilot flag; never calls publishOffer.
  const prepareRoute=p.match(/^\/api\/admin\/ebay\/unpublished-offers\/(RS-[A-F0-9]{10})$/);
  if(prepareRoute&&req.method==='GET')return json(res,200,unpublishedOffers.get(prepareRoute[1]));
@@ -732,20 +760,20 @@ async function handle(req,res){
  const update=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/update$/);
  if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');if(status==='PAID'&&old.status!=='PAID')return problem(res,409,'Record payout through the 30-day settlement ledger; status cannot be changed directly.');if(old.status==='PAID'&&status!=='PAID')return problem(res,409,'Recorded payouts are immutable; resolve corrections separately.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));
  const previousAgreement=signing.state(id);
- if(status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
+ if(old.intake_source!=='STAFF_OWNED'&&status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
  if(status==='REJECTED'&&previousAgreement?.state==='SIGNED')return problem(res,409,'This item has a signed agreement; handle cancellation separately.');
- if(['AWAITING_SHIPMENT','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&previousAgreement?.state!=='SIGNED')return problem(res,409,'A signed consignment agreement is required for this stage.');
+ if(old.intake_source!=='STAFF_OWNED'&&['AWAITING_SHIPMENT','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&previousAgreement?.state!=='SIGNED')return problem(res,409,'A signed consignment agreement is required for this stage.');
  if(['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!verified)return problem(res,409,'Verify physical receipt before listing this item.');const notes=clean(b.adminNotes??old.admin_notes,3000),tracking=clean(b.tracking??old.tracking,130),sku=clean(b.sku??old.sku,90),bin=clean(b.binLocation??old.bin_location,90);const estimate=b.estimateDollars===''||b.estimateDollars==null?null:Math.round(Number(b.estimateDollars)*100);if(estimate!==null&&(!Number.isFinite(estimate)||estimate<0||estimate>10_000_000))return problem(res,400,'Invalid estimate.');db.prepare('UPDATE submissions SET status=?,admin_notes=?,tracking=?,sku=?,bin_location=?,received_verified=?,estimate_cents=?,updated_at=? WHERE id=?').run(status,notes,tracking,sku,bin,verified,estimate,now(),id);audit(id,`STATUS ${old.status} → ${status}`);
- if(status!==old.status&&status==='ACCEPTED'){signing.acceptance(old);await sendPending(id);}
- if(status!==old.status&&status==='REJECTED')signing.rejection(old);
- if(status!==old.status&&['NEEDS_INFO','REJECTED'].includes(status)){
+ if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&status==='ACCEPTED'){signing.acceptance(old);await sendPending(id);}
+ if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&status==='REJECTED')signing.rejection(old);
+ if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&['NEEDS_INFO','REJECTED'].includes(status)){
   const messages={NEEDS_INFO:['More information requested','We need a little more information to complete your assessment. Our team will contact you with the details.'],REJECTED:['Item assessment update','Thank you for submitting your item. We are unable to accept it for consignment at this time.']};
   const [subject,message]=messages[status];queueMail(id,`status_${status}`,old.email,`SHUKCHIC: ${subject} (${id})`,`<div style="font-family:Arial,sans-serif;max-width:580px;margin:auto;padding:24px"><img src="${PUBLIC_BASE_URL}/assets/shukchic-email-logo.png" alt="SHUKCHIC Designer Resale" width="240" height="50" style="display:block;border-radius:8px"><h2>${htmlEscape(subject)}</h2><p>Hi ${htmlEscape(old.first_name)},</p><p>${htmlEscape(message)}</p><p>Reference: <b>${id}</b></p><p>SHUKCHIC Team</p></div>`);
   await sendPending(id);
  }
  return json(res,200,{ok:true});}
  const retry=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/resend$/);
- if(req.method==='POST'&&retry){db.prepare("UPDATE mail_outbox SET state='PENDING' WHERE submission_id=? AND state IN ('FAILED','SETUP_REQUIRED')").run(retry[1]);const r=await sendPending(retry[1]);return json(res,200,r);}
+ if(req.method==='POST'&&retry){const source=db.prepare('SELECT intake_source FROM submissions WHERE id=?').get(retry[1]);if(!source)return problem(res,404,'Item not found.');if(source.intake_source==='STAFF_OWNED')return problem(res,409,'Company-owned items have no customer emails to resend.');db.prepare("UPDATE mail_outbox SET state='PENDING' WHERE submission_id=? AND state IN ('FAILED','SETUP_REQUIRED')").run(retry[1]);const r=await sendPending(retry[1]);return json(res,200,r);}
  if(req.method==='GET'){
   const file=publicFile(p);if(file){const ext=path.extname(file);return serve(res,file,mime[ext]||'application/octet-stream');}
  }
