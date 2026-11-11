@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id),sections=['merchantSignIn','merchantActi
 const show=id=>{for(const name of sections)$(name).hidden=name!==id;$('merchantLoading').hidden=true;};
 const api=async(url,opts)=>{const r=await fetch(url,{credentials:'same-origin',...opts});const data=await r.json();if(!r.ok)throw Error(data.error||'Please try again.');return data;};
 const formBody=f=>Object.fromEntries(new FormData(f).entries());
-function pane(name){for(const id of ['inventory','upload','shipping','earnings'])$('merchant'+id[0].toUpperCase()+id.slice(1)).hidden=id!==name;document.querySelectorAll('[data-tab]').forEach(button=>button.classList.toggle('active',button.dataset.tab===name));}
+function pane(name){for(const id of ['inventory','upload','shipping','earnings','store'])$('merchant'+id[0].toUpperCase()+id.slice(1)).hidden=id!==name;document.querySelectorAll('[data-tab]').forEach(button=>button.classList.toggle('active',button.dataset.tab===name));}
 document.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>pane(button.dataset.tab)));
 document.querySelectorAll('[data-jump]').forEach(button=>button.addEventListener('click',()=>pane(button.dataset.jump)));
 const money=cents=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format((Number(cents)||0)/100);
@@ -22,7 +22,14 @@ async function refresh(){
  $('merchantEarningsTotal').textContent=money(subtotal);$('merchantEarningsRate').textContent='Estimated '+(100-data.commissionPercent)+'% merchant share of recorded sales';
  if(!data.orders.length)put(earnings,'p','Earnings appear as verified eBay orders are assigned to your inventory.','merchant-note');
 }
-async function startHome(data){const m=data.merchant;$('merchantBusinessName').textContent=m.business;$('merchantAddress').textContent='Ships from '+m.city+', '+m.state+' '+m.postalCode;show('merchantHome');pane('inventory');await refresh();}
+async function startHome(data){const m=data.merchant;$('merchantBusinessName').textContent=m.storeName||m.business;$('merchantAddress').textContent='Ships from '+m.city+', '+m.state+' '+m.postalCode;show('merchantHome');
+ const form=$('merchantStoreForm');for(const [field,value] of Object.entries({storeName:m.storeName||m.business,street:m.street||'',city:m.city,state:m.state,postalCode:m.postalCode})){form.elements[field].value=value;}
+ pane(m.storeReady?'inventory':'store');if(!m.storeReady)$('merchantStoreStatus').textContent='Complete your real ship-from address before uploading inventory.';
+ try{const signed=await api('/api/merchant/agreement');$('merchantSignedAgreement').textContent=signed.agreement.agreement_text+'\n\nSigned by: '+signed.agreement.signature+'\nSigned at: '+signed.agreement.signed_at;}catch{}
+ await refresh();
+}
+$('merchantStoreForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,output=$('merchantStoreStatus'),button=form.querySelector('button[type=submit]');if(!form.reportValidity())return;button.disabled=true;output.textContent='Saving store…';try{await api('/api/merchant/store',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formBody(form))});output.textContent='Store shipping details saved.';pane('inventory');}catch(err){output.textContent=err.message;}finally{button.disabled=false;}});
+
 $('merchantLoginForm').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;try{await api('/api/merchant/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formBody(form))});await startHome(await api('/api/merchant/session'));}catch(err){$('merchantLoginError').textContent=err.message;}});
 $('merchantLogout').addEventListener('click',async()=>{await api('/api/merchant/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});show('merchantSignIn');});
 const params=new URLSearchParams(location.search),invite=params.get('invite');if(invite){
