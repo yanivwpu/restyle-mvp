@@ -33,7 +33,7 @@ export function createListingDrafts({db,signing,audit}){
  function gates(sub){const issues=draftGates(sub);if(!sub)return issues;
  if(!sub.received_verified||!['RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push(sub.intake_source==='MERCHANT'?'Merchant inventory and shipping location must be verified by staff before final approval':'Warehouse item must be received and verified before final approval');
  if(!clean(sub.sku))issues.push('Warehouse SKU is required for final approval');
- if(!clean(sub.bin_location))issues.push('Warehouse bin is required for final approval');
+ if(sub.intake_source!=='MERCHANT'&&!clean(sub.bin_location))issues.push('Warehouse bin is required for final approval');
  return issues;}
  function inspect(sub){return {draft:draft(sub.id),draftGates:draftGates(sub),gates:gates(sub),aiAvailable:!!process.env.OPENAI_API_KEY,ebayConnected:false,publishingEnabled:false,ebayMapping:{enabled:false,marketplace:'EBAY_US',status:'ACCESS_NOT_VERIFIED',message:'eBay Inventory Mapping requires a separate sell.inventory.mapping authorization. Existing seller scopes must not be modified until the app permission is confirmed. No eBay AI preview was requested.',documentation:'https://developer.ebay.com/develop/api/sell/inventory_mapping'}};}
  async function generate(sub,body){const issues=draftGates(sub);if(issues.length)throw Object.assign(new Error(issues.join('; ')),{status:409});
