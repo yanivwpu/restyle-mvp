@@ -28,7 +28,7 @@ export function createListingDrafts({db,signing,audit}){
  function draftGates(sub){if(!sub)return ['Submission missing'];const issues=[];const agreement=signing.state(sub.id);
  if(sub.intake_source!=='STAFF_OWNED'&&agreement?.state!=='SIGNED')issues.push('Signed consignment agreement required');
  if(!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Approve item before drafting');
- if(!db.prepare('SELECT COUNT(*) AS n FROM photos WHERE submission_id=?').get(sub.id).n)issues.push('Item photograph is required');
+ if(!db.prepare('SELECT (SELECT COUNT(*) FROM photos WHERE submission_id=?) + (SELECT COUNT(*) FROM warehouse_photos WHERE submission_id=?) AS n').get(sub.id,sub.id).n)issues.push('Item photograph is required');
  return issues;}
  function gates(sub){const issues=draftGates(sub);if(!sub)return issues;
  if(!sub.received_verified||!['RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Warehouse item must be received and verified before final approval');
