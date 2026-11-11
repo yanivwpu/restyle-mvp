@@ -86,7 +86,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    if(!helpers.admin)return send(401,{error:'Admin sign-in required.'}),true;
    if(method==='GET'&&p==='/api/admin/partners'){
     const applications=db.prepare('SELECT * FROM merchant_applications ORDER BY created_at DESC LIMIT 200').all();
-    const merchants=db.prepare('SELECT id,business,email,city,state,postal_code,commission_percent,signed_at,active,ship_street,ebay_location_key FROM merchant_accounts ORDER BY created_at DESC').all();
+    const merchants=db.prepare('SELECT id,application_id,business,email,city,state,postal_code,commission_percent,signed_at,active,ship_street,ebay_location_key FROM merchant_accounts ORDER BY created_at DESC').all();
     return send(200,{applications,merchants}),true;
    }
    const approve=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/invite$/);
