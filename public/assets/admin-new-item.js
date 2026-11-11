@@ -39,7 +39,7 @@ async function addFiles(files){
  for(const file of incoming){try{photos.push(await optimize(file));}catch(e){showError(e.message);}}
  fileInput.value='';render();
 }
-drop.addEventListener('click',()=>fileInput.click());
+drop.addEventListener('click',e=>{if(e.target!==fileInput)fileInput.click();});
 drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInput.click();}});
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('dragover');});
 drop.addEventListener('dragleave',()=>drop.classList.remove('dragover'));
