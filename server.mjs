@@ -111,7 +111,7 @@ const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,s
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
-const merchantPortal=createMerchantPortal({db,sessionSecret:SESSION_SECRET,uploadDir:UPLOAD_DIR,mailEnabled:MAIL_ENABLED,emailFrom:EMAIL_FROM,resendKey:RESEND_API_KEY,baseUrl:PUBLIC_BASE_URL,getEbayToken:()=>ebayOAuth.getAccessToken()});
+const merchantPortal=createMerchantPortal({db,sessionSecret:SESSION_SECRET,uploadDir:UPLOAD_DIR,mailEnabled:MAIL_ENABLED,emailFrom:EMAIL_FROM,resendKey:RESEND_API_KEY,baseUrl:PUBLIC_BASE_URL,getEbayToken:()=>ebayOAuth.getAccessToken(),getEbayPublishingToken:()=>ebayOAuth.getPublishingToken()});
 const ebayOAuth=createEbayOAuth({db});
 const unpublishedOffers=createEbayUnpublishedOffers({db,oauth:ebayOAuth,loadPhoto:({id,source,submissionId})=>{
  const table=source==='warehouse'?'warehouse_photos':source==='customer'?'photos':null;
@@ -514,7 +514,11 @@ async function handle(req,res){
   if(!item)return problem(res,404,'Item not found.');
   const inspected=listingDrafts.inspect(item);
   const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
-  if(item.intake_source==='MERCHANT')return problem(res,409,'Merchant listing requires an eBay inventory location matching the boutique ship-from address. Merchant-location setup is not yet enabled.');
+  if(item.intake_source==='MERCHANT'){
+   const merchant=db.prepare('SELECT m.ebay_location_key,m.signed_at,m.active FROM merchant_items mi JOIN merchant_accounts m ON m.id=mi.merchant_id WHERE mi.submission_id=?').get(id);
+   if(!merchant||!merchant.active||!merchant.signed_at||!merchant.ebay_location_key||merchant.ebay_location_key!==body?.settings?.merchantLocationKey)
+    return problem(res,409,'This merchant must have an active agreement and verified eBay ship-from location selected for the offer.');
+  }
   const prepared=await unpublishedOffers.prepare({item,draft:inspected.draft,photos:availablePhotos(id).effective,
     issues:inspected.gates,duplicates,settings:body?.settings});
   audit(id,'EBAY UNPUBLISHED OFFER PREPARED: '+prepared.offerId);
@@ -529,7 +533,13 @@ async function handle(req,res){
   if(!item)return problem(res,404,'Submission not found.');
   const inspected=listingDrafts.inspect(item);
   const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
-  if(item.intake_source==='MERCHANT')return problem(res,409,'Merchant publishing requires verified eBay ship-from location and partner fulfillment setup.');
+  if(item.intake_source==='MERCHANT'){
+   const merchant=db.prepare('SELECT m.ebay_location_key,m.signed_at,m.active FROM merchant_items mi JOIN merchant_accounts m ON m.id=mi.merchant_id WHERE mi.submission_id=?').get(id);
+   const preparation=db.prepare('SELECT policy_json FROM ebay_offer_preparations WHERE submission_id=?').get(id);
+   let sourceLocation='';try{sourceLocation=JSON.parse(preparation?.policy_json||'{}').location||'';}catch{}
+   if(!merchant||!merchant.active||!merchant.signed_at||!merchant.ebay_location_key||merchant.ebay_location_key!==sourceLocation)
+    return problem(res,409,'Merchant shipping location or agreement changed since preparation. Reconcile with eBay before publishing.');
+  }
   const published=await unpublishedOffers.publish({item,draft:inspected.draft,photos:availablePhotos(id).effective,
    issues:inspected.gates,duplicates,confirmation:body?.confirmation});
   db.prepare("UPDATE submissions SET status='LISTED',updated_at=? WHERE id=? AND status IN ('RECEIVED','READY_TO_LIST')").run(now(),id);
@@ -579,7 +589,7 @@ async function handle(req,res){
  }
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
-  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,s.intake_source,COALESCE(ma.ebay_location_key,'') AS merchant_location_key,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN merchant_items mi ON mi.submission_id=s.id LEFT JOIN merchant_accounts ma ON ma.id=mi.merchant_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
   return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null,style_fix_available:unpublishedOffers.get(r.id).styleFixAvailable===true,weight_fix_available:unpublishedOffers.get(r.id).weightFixAvailable===true};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
