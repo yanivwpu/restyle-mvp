@@ -14,7 +14,22 @@ async function load(){
    append(card,'strong',entry.business+' · '+entry.status);
    append(card,'p',entry.contact+' · '+entry.email+' · '+entry.city+', '+entry.state+' '+entry.postal_code);
    if(entry.description)append(card,'p',entry.description);
-   if(entry.status==='ACTIVE')continue;
+   if(entry.status==='ACTIVE'){
+    const account=data.merchants.find(x=>x.application_id===entry.id);
+    const region=append(card,'div','','merchant-admin-location');
+    if(account?.ebay_location_key){append(region,'p','eBay shipping location verified: '+account.ebay_location_key);}
+    else if(account){
+     append(region,'p',account.ship_street?'Ready to register boutique shipping location with eBay.':'The merchant must complete Store settings on their mobile account first.');
+     const button=append(region,'button','Verify shipping location in eBay','small-button');button.type='button';button.disabled=!account.ship_street;
+     const result=append(region,'p','','merchant-admin-status');
+     button.addEventListener('click',async()=>{button.disabled=true;result.textContent='Verifying merchant shipping location with eBay…';
+      try{const response=await api('/api/admin/partners/'+encodeURIComponent(account.id)+'/location',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+       result.textContent='Verified eBay ship-from: '+response.locationKey+'. Merchant listings can use this location.';
+      }catch(err){result.textContent=err.message;}finally{button.disabled=false;}
+     });
+    }
+    continue;
+   }
    const wrapper=append(card,'details','','merchant-admin-approval');
    append(wrapper,'summary',entry.status==='INVITED'?'Review invitation':'Review & invite merchant');
    const form=append(wrapper,'form','');
