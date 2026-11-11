@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>SHUKCHIC — Add inventory</title>
+<link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css">
+<link rel="stylesheet" href="/assets/admin-new-item.css"><script defer src="/assets/admin-new-item.js"></script></head>
+<body class="admin-body">
+<header class="admin-header"><a href="/admin" class="brand"><img class="brand-logo" src="/assets/shukchic-logo.svg" alt="SHUKCHIC"></a><span class="admin-heading">Add inventory</span><a class="small-button" href="/admin">Back to dashboard</a></header>
+<main class="staff-new-item">
+<div class="staff-new-intro"><span class="eyebrow">INTERNAL INVENTORY</span><h1>Add an item</h1><p>Quick entry for SHUKCHIC-owned inventory. No customer contact information, customer agreement, or consignment emails.</p></div>
+<form id="staffItemForm" class="staff-form">
+<div class="staff-fields">
+<label>Category <span aria-hidden="true">*</span><select name="category" required><option value="">Choose category</option><option>Handbags</option><option>Clothing</option><option>Shoes</option><option>Jewelry</option><option>Accessories</option><option>Other</option></select></label>
+<label>Brand / designer <span aria-hidden="true">*</span><input name="brand" maxlength="100" required placeholder="Brand or designer"></label>
+<label>Condition <span aria-hidden="true">*</span><select name="condition" required><option value="">Choose condition</option><option>New with tags</option><option>New without tags</option><option>Like new</option><option>Excellent</option><option>Good</option><option>Fair</option></select></label>
+<label>Item details <span class="optional">(optional)</span><textarea name="description" rows="3" maxlength="1800" placeholder="Color, size, flaws, material, notes…"></textarea></label>
+</div>
+<div class="staff-photo-header"><h2>Photos <span class="optional">(optional now)</span></h2><p>Add up to 6 photos. You can also upload warehouse photos later, but a photo is required before creating an eBay listing draft.</p></div>
+<div id="staffDropZone" class="staff-drop" role="button" tabindex="0"><strong>Click or drop photos here</strong><span>JPG, PNG, WebP • up to 6</span><input id="staffPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></div>
+<div id="staffPreviews" class="staff-previews" aria-live="polite"></div>
+<div id="staffError" class="admin-error" role="alert" hidden></div>
+<div class="staff-actions"><button id="staffSave" type="submit" class="btn btn-primary">Save to inventory</button><a class="small-button" href="/admin">Cancel</a></div>
+</form>
+<section id="staffSaved" hidden class="staff-saved"><h2>Item saved</h2><p id="staffSavedRef"></p><p>The item is now in Incoming items. You can add warehouse details and review it before listing.</p><div class="staff-actions"><a class="btn btn-primary" href="/admin">View in dashboard</a><button type="button" id="staffAgain" class="small-button">Add another item</button></div></section>
+</main></body></html>
