@@ -31,7 +31,7 @@ test('staff-owned backend avoids consent, customer email, and fictitious signatu
  assert.match(server,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(old\.intake_source\)&&status!==old\.status&&\['NEEDS_INFO','REJECTED'\]/);
  assert.match(listing,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(sub\.intake_source\)/);
  assert.match(listing,/warehouse_photos WHERE submission_id/);
- assert.match(mapping,/sub\.intake_source!=='STAFF_OWNED'/);
+ assert.match(mapping,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(sub\.intake_source\)/);
 });
 
 test('admin detail explains ownership and does not bind missing customer email action',()=>{
