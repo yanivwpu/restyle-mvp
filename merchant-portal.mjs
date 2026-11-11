@@ -103,6 +103,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
       db.prepare('UPDATE merchant_accounts SET commission_percent=?,agreement_text=?,agreement_sha=? WHERE id=?').run(pct,terms,sha(terms),m.id);
     }
     const raw=crypto.randomBytes(32).toString('base64url'),id=crypto.randomUUID(),expires=new Date(Date.now()+7*86400_000).toISOString();
+    db.prepare('UPDATE merchant_invites SET used_at=? WHERE merchant_id=? AND used_at IS NULL').run(stamp,m.id);
     db.prepare('INSERT INTO merchant_invites(id,merchant_id,secret_hash,expires_at,created_at) VALUES(?,?,?,?,?)').run(id,m.id,sha(raw),expires,stamp);
     db.prepare("UPDATE merchant_applications SET status='INVITED' WHERE id=?").run(a.id);
     const link=baseUrl+'/merchant?invite='+encodeURIComponent(raw);
