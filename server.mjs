@@ -143,7 +143,7 @@ function availablePhotos(id){
  const chosen=db.prepare('SELECT photo_id AS id,source FROM listing_photo_selection WHERE submission_id=? ORDER BY position').all(id);
  const valid=new Set([...customer,...warehouse].map(x=>x.id));
  const selected=chosen.filter(x=>valid.has(x.id));
- return {customer,warehouse,selected,effective:chosen.length?selected:customer.slice(0,6).map(x=>({id:x.id,source:'customer'}))};
+ return {customer,warehouse,selected,effective:chosen.length?selected:(customer.length?customer:warehouse).slice(0,6).map(x=>({id:x.id,source:x.source}))};
 }
 function audit(id,event){db.prepare('INSERT INTO admin_events(submission_id,event,created_at) VALUES(?,?,?)').run(id,event,now());}
 async function handle(req,res){
