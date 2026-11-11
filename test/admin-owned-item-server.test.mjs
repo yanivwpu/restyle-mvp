@@ -34,7 +34,7 @@ test('staff-owned inventory is private, saved, and generates no customer consent
   const cookie=(login.headers.get('set-cookie')||'').split(';')[0];assert.ok(cookie.startsWith('restyle_session='));
   assert.equal((await get('/admin/new-item',cookie)).status,200);
   const item=await post('/api/admin/owned-items',{brand:'SHUKCHIC Test',category:'Jewelry',condition:'Excellent',description:'Company stock',photos:[]},cookie);
-  assert.equal(item.status,201,await item.text().catch(()=>''));const saved=await item.json();
+  assert.equal(item.status,201);const saved=await item.json();
   const detail=await get('/api/admin/submissions/'+saved.id,cookie);assert.equal(detail.status,200);
   const data=await detail.json();
   assert.equal(data.item.intake_source,'STAFF_OWNED');
