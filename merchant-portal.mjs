@@ -105,6 +105,39 @@ export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=fal
     const sent=await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
     return send(200,{ok:true,emailSent:sent,inviteUrl:link,expiresAt:expires}),true;
    }
+   if(method==='POST'&&p==='/api/admin/merchant-orders'){
+    const data=await body(7*1024*1024),submissionId=safe(data.submissionId,25),orderId=safe(data.orderId,130),carrier=safe(data.carrier,50);
+    const m=db.prepare("SELECT mi.merchant_id,s.id,s.sku,s.status,s.received_verified,ma.business FROM merchant_items mi JOIN submissions s ON s.id=mi.submission_id JOIN merchant_accounts ma ON ma.id=mi.merchant_id WHERE s.id=?").get(submissionId);
+    if(!m||m.status!=='LISTED'||!m.received_verified||!m.sku)return send(409,{error:'Merchant item must be listed and verified before assigning an eBay order.'}),true;
+    if(!/^[\w!:-]{8,130}$/.test(orderId)||!['USPS','UPS','FedEx'].includes(carrier))return send(400,{error:'Enter a valid eBay order and shipping carrier.'}),true;
+    const label=data.label;if(!label||typeof label.data!=='string'||label.data.length>6*1024*1024)return send(400,{error:'Attach the purchased eBay QR image or PDF label.'}),true;
+    let mime='',fileBytes=null,ext='';
+    if(label.data.startsWith('data:application/pdf;base64,')){
+     mime='application/pdf';fileBytes=Buffer.from(label.data.slice(28),'base64');ext='pdf';
+     if(fileBytes.subarray(0,5).toString()!=='%PDF-')return send(400,{error:'Invalid PDF label.'}),true;
+    }else{
+     const parsed=helpers.parsePhoto(label);mime=parsed.mime;fileBytes=parsed.bytes;ext=parsed.ext;
+    }
+    if(fileBytes.length>5*1024*1024)return send(413,{error:'Shipping label too large.'}),true;
+    let order;try{
+     const token=await getEbayToken();
+     const response=await fetch('https://api.ebay.com/sell/fulfillment/v1/order/'+encodeURIComponent(orderId),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(9500)});
+     if(!response.ok)throw fail(502,'eBay order could not be verified.');
+     order=await response.json();
+    }catch(err){return send(err.status||502,{error:'Could not verify this order with eBay. No shipping task created.'}),true;}
+    if(order.orderPaymentStatus!=='PAID'||!Array.isArray(order.lineItems)||!order.lineItems.some(line=>String(line.sku||'')===m.sku))
+     return send(409,{error:'eBay order is not confirmed paid, or does not match this merchant item SKU.'}),true;
+    if(db.prepare('SELECT 1 FROM merchant_shipping_tasks WHERE ebay_order_id=?').get(orderId))return send(409,{error:'Order already assigned to a merchant.'}),true;
+    const match=order.lineItems.find(line=>String(line.sku||'')===m.sku);
+    const price=Number(match?.lineItemCost?.value||match?.total?.value);
+    if(!Number.isFinite(price)||price<=0||price>100000)return send(409,{error:'eBay item sale price unavailable for safe merchant earnings calculation.'}),true;
+    const totalCents=Math.round(price*100),id=crypto.randomUUID(),filename=crypto.randomUUID()+'.'+ext;
+    const location=path.join(uploadDir,filename);
+    try{fs.writeFileSync(location,fileBytes,{flag:'wx',mode:0o600});
+      db.prepare('INSERT INTO merchant_shipping_tasks(id,merchant_id,submission_id,ebay_order_id,order_total_cents,carrier,label_filename,label_mime,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(id,m.merchant_id,m.id,orderId,totalCents,carrier,filename,mime,new Date().toISOString());
+    }catch(err){try{fs.unlinkSync(location)}catch{}throw err;}
+    return send(201,{ok:true,shippingTaskId:id}),true;
+   }
    return send(404,{error:'Unknown partner admin action.'}),true;
   }
   if(method==='GET'&&p==='/api/merchant/session'){
