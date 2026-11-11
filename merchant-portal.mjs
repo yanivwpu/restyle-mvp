@@ -13,7 +13,7 @@ function passwordHash(password){const salt=crypto.randomBytes(16).toString('hex'
 function checkPassword(password,hash){if(!hash?.includes(':'))return false;const [salt,stored]=hash.split(':');if(!/^[a-f0-9]{32}$/.test(salt)||!/^[a-f0-9]{128}$/.test(stored))return false;const attempt=crypto.scryptSync(password,salt,64);return crypto.timingSafeEqual(attempt,Buffer.from(stored,'hex'));}
 const digit=(n)=>Number.isFinite(Number(n))?Number(n):NaN;
 
-export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',baseUrl='',getEbayToken}){
+export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',baseUrl='',getEbayToken,getEbayPublishingToken}){
  db.exec("CREATE TABLE IF NOT EXISTS merchant_applications(id TEXT PRIMARY KEY,business TEXT NOT NULL,contact TEXT NOT NULL,email TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'APPLIED',created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_accounts(id TEXT PRIMARY KEY,application_id TEXT NOT NULL UNIQUE REFERENCES merchant_applications(id),business TEXT NOT NULL,email TEXT NOT NULL UNIQUE,contact TEXT NOT NULL,city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,password_hash TEXT NOT NULL DEFAULT '',commission_percent REAL NOT NULL,agreement_text TEXT NOT NULL,agreement_sha TEXT NOT NULL,signature TEXT NOT NULL DEFAULT '',signed_at TEXT,signature_ip_hash TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_invites(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),secret_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,used_at TEXT,created_at TEXT NOT NULL)");
@@ -21,13 +21,15 @@ export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=fal
  db.exec("CREATE TABLE IF NOT EXISTS merchant_shipping_tasks(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),submission_id TEXT NOT NULL REFERENCES submissions(id),ebay_order_id TEXT NOT NULL UNIQUE,order_total_cents INTEGER NOT NULL,carrier TEXT NOT NULL,label_filename TEXT NOT NULL,label_mime TEXT NOT NULL,tracking TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'READY_TO_SHIP',created_at TEXT NOT NULL,shipped_at TEXT)");
 if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='ship_street'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN ship_street TEXT NOT NULL DEFAULT ''");
  if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='store_display_name'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN store_display_name TEXT NOT NULL DEFAULT ''");
+if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='ebay_location_key'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN ebay_location_key TEXT NOT NULL DEFAULT ''");
+ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='ebay_location_verified_at'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN ebay_location_verified_at TEXT");
  const addCookie=(res,value,remove=false)=>res.setHeader('Set-Cookie','shukchic_merchant='+value+'; HttpOnly; Path=/; SameSite=Lax; '+(process.env.NODE_ENV==='production'?'Secure; ':'')+'Max-Age='+(remove?0:30*86400));
  const makeSession=id=>{const payload=Buffer.from(JSON.stringify({id,exp:Date.now()+30*86400_000,v:1})).toString('base64url');return payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');};
  function logged(req){
   const token=clientCookie(req,'shukchic_merchant');const [p,signature]=token.split('.');if(!p||!signature||p.length>500)return null;
   const expected=crypto.createHmac('sha256',sessionSecret).update(p).digest('base64url');if(!equal(expected,signature))return null;
   try{const obj=JSON.parse(Buffer.from(p,'base64url').toString('utf8'));if(obj.v!==1||obj.exp<Date.now())return null;
-   return db.prepare('SELECT id,business,email,contact,city,state,postal_code,ship_street,store_display_name,commission_percent,signed_at FROM merchant_accounts WHERE id=? AND active=1').get(obj.id)||null;
+   return db.prepare('SELECT id,business,email,contact,city,state,postal_code,ship_street,store_display_name,commission_percent,signed_at,ebay_location_key FROM merchant_accounts WHERE id=? AND active=1').get(obj.id)||null;
   }catch{return null;}
  }
  function invite(token){
@@ -38,7 +40,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='s
   if(!mailEnabled)return false;
   try{const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+resendKey,'Content-Type':'application/json','Idempotency-Key':id},body:JSON.stringify({from:emailFrom,to:[to],subject,html:body}),signal:AbortSignal.timeout(9000)});return response.ok;}catch{return false;}
  }
- const responseAccount=m=>({business:m.business,storeName:m.store_display_name||m.business,contact:m.contact,email:m.email,city:m.city,state:m.state,postalCode:m.postal_code,street:m.ship_street||'',storeReady:!!m.ship_street,commissionPercent:m.commission_percent});
+ const responseAccount=m=>({business:m.business,storeName:m.store_display_name||m.business,contact:m.contact,email:m.email,city:m.city,state:m.state,postalCode:m.postal_code,street:m.ship_street||'',storeReady:!!m.ship_street,locationReady:!!m.ebay_location_key,commissionPercent:m.commission_percent});
  function owner(req,res){const u=logged(req);if(!u){stringify(res,401,{error:'Merchant sign-in required.'});return null;}return u;}
  async function handle(req,res,url,helpers){
   const p=url.pathname,method=req.method||'GET',send=(status,v)=>stringify(res,status,v);
@@ -84,7 +86,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='s
    if(!helpers.admin)return send(401,{error:'Admin sign-in required.'}),true;
    if(method==='GET'&&p==='/api/admin/partners'){
     const applications=db.prepare('SELECT * FROM merchant_applications ORDER BY created_at DESC LIMIT 200').all();
-    const merchants=db.prepare('SELECT id,business,email,city,state,postal_code,commission_percent,signed_at,active FROM merchant_accounts ORDER BY created_at DESC').all();
+    const merchants=db.prepare('SELECT id,business,email,city,state,postal_code,commission_percent,signed_at,active,ship_street,ebay_location_key FROM merchant_accounts ORDER BY created_at DESC').all();
     return send(200,{applications,merchants}),true;
    }
    const approve=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/invite$/);
@@ -106,6 +108,32 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='s
     const link=baseUrl+'/merchant?invite='+encodeURIComponent(raw);
     const sent=await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
     return send(200,{ok:true,emailSent:sent,inviteUrl:link,expiresAt:expires}),true;
+   }
+   const loc=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/location$/);
+   if(method==='POST'&&loc){
+    const m=db.prepare('SELECT id,business,ship_street,city,state,postal_code,signed_at,active,ebay_location_key FROM merchant_accounts WHERE id=?').get(loc[1]);
+    if(!m||!m.active||!m.signed_at)return send(409,{error:'Merchant must sign the partnership agreement before location setup.'}),true;
+    if(m.ship_street.length<5||!/^[A-Za-z]{2}$/.test(m.state)||!/^\d{5}(?:-\d{4})?$/.test(m.postal_code))
+     return send(409,{error:'Merchant must complete a valid US shipping address in their mobile store settings.'}),true;
+    const key='SCM_'+m.id.replaceAll('-','').slice(0,18)+'_'+sha(m.ship_street+'|'+m.city+'|'+m.state+'|'+m.postal_code).slice(0,8);
+    const endpoint='https://api.ebay.com/sell/inventory/v1/location/'+encodeURIComponent(key);
+    let token;try{token=await getEbayPublishingToken();}catch{return send(503,{error:'eBay publishing permission is not connected.'}),true;}
+    const headers={Authorization:'Bearer '+token,Accept:'application/json','Content-Type':'application/json'};
+    const correct=remote=>{
+     const address=remote?.location?.address||{},norm=x=>safe(x,180).toLowerCase().replace(/[^a-z0-9]/g,'');
+     return norm(address.addressLine1)===norm(m.ship_street)&&norm(address.city)===norm(m.city)&&norm(address.stateOrProvince)===norm(m.state)&&norm(address.postalCode)===norm(m.postal_code)&&String(address.country||'').toUpperCase()==='US'&&remote.merchantLocationStatus!=='DISABLED';
+    };
+    let existing;try{existing=await fetch(endpoint,{headers,signal:AbortSignal.timeout(9500)});}catch{return send(502,{error:'eBay location service unavailable.'}),true;}
+    if(existing.status===404){
+     const payload={name:('SHUKCHIC Merchant '+m.business).slice(0,80),location:{address:{addressLine1:m.ship_street,city:m.city,stateOrProvince:m.state.toUpperCase(),postalCode:m.postal_code,country:'US'}},locationTypes:['WAREHOUSE'],merchantLocationStatus:'ENABLED'};
+     let created;try{created=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(9500)});}catch{return send(502,{error:'eBay location creation could not be confirmed. Check eBay before retrying.'}),true;}
+     if(!created.ok)return send(502,{error:'eBay declined this merchant shipping location. Check business location details.'}),true;
+     try{existing=await fetch(endpoint,{headers,signal:AbortSignal.timeout(9500)});}catch{return send(502,{error:'eBay location was created but verification is pending.'}),true;}
+    }
+    if(!existing.ok)return send(502,{error:'Could not confirm eBay merchant shipping location.'}),true;
+    const remote=await existing.json();if(!correct(remote))return send(409,{error:'eBay shipping location differs from merchant-provided address. Do not publish until corrected.'}),true;
+    db.prepare('UPDATE merchant_accounts SET ebay_location_key=?,ebay_location_verified_at=? WHERE id=?').run(key,new Date().toISOString(),m.id);
+    return send(200,{ok:true,locationKey:key,city:m.city,state:m.state,postalCode:m.postal_code}),true;
    }
    if(method==='POST'&&p==='/api/admin/merchant-orders'){
     const data=await body(7*1024*1024),submissionId=safe(data.submissionId,25),orderId=safe(data.orderId,130),carrier=safe(data.carrier,50);
@@ -149,7 +177,9 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='s
   if(method==='POST'&&p==='/api/merchant/store'){
    const b=await body(4000),storeName=safe(b.storeName,120),street=safe(b.street,180),city=safe(b.city,100),state=safe(b.state,50),postal=safe(b.postalCode,18);
    if(storeName.length<2||street.length<5||city.length<2||state.length<2||postal.length<4)return send(400,{error:'Enter your boutique name and complete real shipping address.'}),true;
-   db.prepare('UPDATE merchant_accounts SET store_display_name=?,ship_street=?,city=?,state=?,postal_code=? WHERE id=?').run(storeName,street,city,state,postal,user.id);
+   const changed=street!==user.ship_street||city!==user.city||state!==user.state||postal!==user.postal_code;
+   if(changed)db.prepare("UPDATE merchant_accounts SET store_display_name=?,ship_street=?,city=?,state=?,postal_code=?,ebay_location_key='',ebay_location_verified_at=NULL WHERE id=?").run(storeName,street,city,state,postal,user.id);
+   else db.prepare('UPDATE merchant_accounts SET store_display_name=? WHERE id=?').run(storeName,user.id);
    return send(200,{ok:true}),true;
   }
   if(method==='GET'&&p==='/api/merchant/agreement'){
