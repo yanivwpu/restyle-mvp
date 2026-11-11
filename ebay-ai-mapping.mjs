@@ -14,7 +14,7 @@ export function createEbayMapping({db,oauth,photoUrls=()=>[],fetcher=fetch}){
  function inspect(sub){const t=db.prepare('SELECT task_id,state,preview_json,created_at,updated_at FROM ebay_ai_mapping_tasks WHERE submission_id=?').get(sub.id);return t?{taskId:t.task_id,status:t.state,preview:t.preview_json?JSON.parse(t.preview_json):null,createdAt:t.created_at,updatedAt:t.updated_at}:null;}
  async function start(sub,agreement,details){
   if(!oauth.aiStatus().connected)throw fail(409,'Connect eBay AI under connection settings.');
-  if((sub.intake_source!=='STAFF_OWNED'&&agreement?.state!=='SIGNED')||!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))throw fail(409,'A signed consignment agreement (or staff-owned inventory) and an accepted item are required.');
+  if((!['STAFF_OWNED','MERCHANT'].includes(sub.intake_source)&&agreement?.state!=='SIGNED')||!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))throw fail(409,'A signed consignment agreement (or staff-owned inventory) and an accepted item are required.');
   const previous=inspect(sub);if(previous&&['PENDING','COMPLETED'].includes(previous.status)&&details?.regenerate!==true)return previous;
   const title=[sub.brand,details?.itemType||sub.category,sub.condition,sub.description].filter(Boolean).join(' ').slice(0,250);
   const images=photoUrls(sub);if(!images.length)throw fail(409,'At least one approved product photo is required.');
