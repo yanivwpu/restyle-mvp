@@ -5,6 +5,7 @@ import path from 'node:path';
 const safe=(value,max=300)=>String(value??'').trim().slice(0,max);
 const validEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)&&value.length<=254;
 const sha=value=>crypto.createHash('sha256').update(value).digest('hex');
+const html=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 function equal(a,b){const x=Buffer.from(sha(String(a))),y=Buffer.from(sha(String(b)));return crypto.timingSafeEqual(x,y);}
 const fail=(code,message)=>Object.assign(new Error(message),{status:code});
 const stringify=(res,status,value,headers={})=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers});res.end(JSON.stringify(value));};
@@ -13,7 +14,7 @@ function passwordHash(password){const salt=crypto.randomBytes(16).toString('hex'
 function checkPassword(password,hash){if(!hash?.includes(':'))return false;const [salt,stored]=hash.split(':');if(!/^[a-f0-9]{32}$/.test(salt)||!/^[a-f0-9]{128}$/.test(stored))return false;const attempt=crypto.scryptSync(password,salt,64);return crypto.timingSafeEqual(attempt,Buffer.from(stored,'hex'));}
 const digit=(n)=>Number.isFinite(Number(n))?Number(n):NaN;
 
-export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',baseUrl='',getEbayToken,getEbayPublishingToken}){
+export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',notifyEmail='',baseUrl='',getEbayToken,getEbayPublishingToken}){
  db.exec("CREATE TABLE IF NOT EXISTS merchant_applications(id TEXT PRIMARY KEY,business TEXT NOT NULL,contact TEXT NOT NULL,email TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'APPLIED',created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_accounts(id TEXT PRIMARY KEY,application_id TEXT NOT NULL UNIQUE REFERENCES merchant_applications(id),business TEXT NOT NULL,email TEXT NOT NULL UNIQUE,contact TEXT NOT NULL,city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,password_hash TEXT NOT NULL DEFAULT '',commission_percent REAL NOT NULL,agreement_text TEXT NOT NULL,agreement_sha TEXT NOT NULL,signature TEXT NOT NULL DEFAULT '',signed_at TEXT,signature_ip_hash TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_invites(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),secret_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,used_at TEXT,created_at TEXT NOT NULL)");
@@ -55,6 +56,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    if(business.length<2||contact.length<2||!validEmail(email)||city.length<2||state.length<2||postal.length<4||!x.confirmBusinessInventory)return send(400,{error:'Complete the business details and confirm you control the stock.'}),true;
    const id=crypto.randomUUID(),time=new Date().toISOString();
    db.prepare('INSERT INTO merchant_applications(id,business,contact,email,phone,city,state,postal_code,description,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,business,contact,email,phone,city,state,postal,description,time);
+   if(validEmail(notifyEmail))await mail(notifyEmail,'New SHUKCHIC boutique partnership application','<h2>New merchant partner application</h2><p>'+html(business)+' · '+html(contact)+' · '+html(email)+'</p><p>Shipping city: '+html(city)+', '+html(state)+' '+html(postal)+'</p><p>Review the application in SHUKCHIC Admin.</p>','merchant-apply-'+id);
    return send(201,{ok:true,reference:id}),true;
   }
   if(method==='GET'&&p==='/api/merchant/invite'){
@@ -230,6 +232,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
     db.prepare('INSERT INTO admin_events(submission_id,event,created_at) VALUES(?,?,?)').run(id,'MERCHANT DROP-SHIP ITEM SUBMITTED · INVENTORY HELD BY PARTNER',stamp);
     db.exec('COMMIT');
    }catch(err){try{db.exec('ROLLBACK');}catch{}for(const name of written){try{fs.unlinkSync(path.join(uploadDir,name));}catch{}}throw err;}
+   if(validEmail(notifyEmail))await mail(notifyEmail,'SHUKCHIC merchant submitted inventory','<h2>New boutique inventory</h2><p>Merchant: '+html(user.business)+'</p><p>Item: '+html(brand)+' · '+html(category)+'</p><p>Reference: '+html(id)+'</p><p>Review it in SHUKCHIC Admin.</p>','merchant-item-'+id);
    return send(201,{ok:true,id}),true;
   }
   if(method==='GET'&&p.startsWith('/api/merchant/shipping-label/')){
