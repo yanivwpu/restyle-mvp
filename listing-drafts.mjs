@@ -26,9 +26,9 @@ export function createListingDrafts({db,signing,audit}){
  db.exec("CREATE TABLE IF NOT EXISTS ebay_listing_drafts (submission_id TEXT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'DRAFT',source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,category_hint TEXT NOT NULL DEFAULT '',category_id TEXT NOT NULL DEFAULT '',aspects_json TEXT NOT NULL DEFAULT '{}',checks_json TEXT NOT NULL DEFAULT '[]',verified_facts_json TEXT NOT NULL DEFAULT '{}',price_cents INTEGER,reviewed_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  function draft(id){const r=db.prepare('SELECT * FROM ebay_listing_drafts WHERE submission_id=?').get(id);return r?{...r,aspects:unpack(r.aspects_json,{}),checks:unpack(r.checks_json,[]),verifiedFacts:unpack(r.verified_facts_json,{})}:null;}
  function draftGates(sub){if(!sub)return ['Submission missing'];const issues=[];const agreement=signing.state(sub.id);
- if(agreement?.state!=='SIGNED')issues.push('Signed consignment agreement required');
+ if(sub.intake_source!=='STAFF_OWNED'&&agreement?.state!=='SIGNED')issues.push('Signed consignment agreement required');
  if(!['AWAITING_SHIPMENT','RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Approve item before drafting');
- if(!db.prepare('SELECT COUNT(*) AS n FROM photos WHERE submission_id=?').get(sub.id).n)issues.push('Item photograph is required');
+ if(!db.prepare('SELECT (SELECT COUNT(*) FROM photos WHERE submission_id=?) + (SELECT COUNT(*) FROM warehouse_photos WHERE submission_id=?) AS n').get(sub.id,sub.id).n)issues.push('Item photograph is required');
  return issues;}
  function gates(sub){const issues=draftGates(sub);if(!sub)return issues;
  if(!sub.received_verified||!['RECEIVED','READY_TO_LIST'].includes(sub.status))issues.push('Warehouse item must be received and verified before final approval');
