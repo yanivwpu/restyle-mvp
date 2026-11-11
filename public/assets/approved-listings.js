@@ -131,11 +131,16 @@
    offerProgress.textContent='Loading your saved eBay settings…';
    const data=await fetchData('/api/admin/ebay/publishing/setup');
    if(!data.connected)throw Error('Reconnect eBay publishing permission first.');
+   const selectedItems=[...batchSelected].map(id=>batchItems.find(x=>x.id===id)).filter(Boolean);
+   const merchantItems=selectedItems.filter(x=>x.intake_source==='MERCHANT');
+   if(merchantItems.length&&selectedItems.length!==1)throw Error('Prepare merchant listings individually so each boutique uses its correct ship-from location.');
+   if(merchantItems.length&&!merchantItems[0].merchant_location_key)throw Error('Set up and verify this boutique eBay shipping location under Merchant partners before preparing the listing.');
+   const expectedLocation=merchantItems.length?merchantItems[0].merchant_location_key:'US_34778';
    const sources=[
     ['#approvedOfferPayment',data.policies?.payment,'Select payment','SHUKCHIC - Immediate Payment'],
     ['#approvedOfferShipping',data.policies?.fulfillment,'Select shipping','SHUKCHIC - Standard Domestic Shipping'],
     ['#approvedOfferReturns',data.policies?.returns,'Select returns','SHUKCHIC - 30 Day Buyer Paid Returns'],
-    ['#approvedOfferLocation',data.locations,'Select eBay location','US_34778']
+    ['#approvedOfferLocation',data.locations,'Select eBay location',expectedLocation]
    ];
    const ambiguous=[];
    for(const [id,value,label,preferred] of sources){
@@ -147,10 +152,10 @@
     else if((value.items||[]).length===1)$(id).value=value.items[0].id;
     else ambiguous.push(label.toLowerCase());
    }
-   $('#approvedOfferAdvanced').open=ambiguous.length>0;
+   $('#approvedOfferAdvanced').open=ambiguous.length>0||merchantItems.length>0;
    $('#approvedOfferDefaultsSummary').textContent=ambiguous.length?
      'Select '+ambiguous.join(', ')+' in the settings below. SHUKCHIC will reuse your choices for this batch.':
-     'Using SHUKCHIC’s existing eBay payment, shipping, return and warehouse settings.';
+     (merchantItems.length?'Using this boutique’s verified ship-from location in eBay. Confirm its shipping policy and actual parcel details.':'Using SHUKCHIC’s existing eBay payment, shipping, return and warehouse settings.');
    offerRows.replaceChildren();
    for(const id of batchSelected){
     const item=batchItems.find(x=>x.id===id);

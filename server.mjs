@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createSigning } from './signing.mjs';
 import { createListingDrafts } from './listing-drafts.mjs';
 import { createSettlements } from './settlements.mjs';
+import { createMerchantPortal } from './merchant-portal.mjs';
 import { sampleOrderPreview, examineEbayOrder } from './ebay-reconciliation.mjs';
 import { createEbayDeletionListener } from './ebay-deletion.mjs';
 import { createEbayOAuth } from './ebay-oauth.mjs';
@@ -110,6 +111,7 @@ const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,s
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
+const merchantPortal=createMerchantPortal({db,sessionSecret:SESSION_SECRET,uploadDir:UPLOAD_DIR,mailEnabled:MAIL_ENABLED,emailFrom:EMAIL_FROM,resendKey:RESEND_API_KEY,notifyEmail:ADMIN_NOTIFY_EMAIL,baseUrl:PUBLIC_BASE_URL,getEbayToken:()=>ebayOAuth.getAccessToken(),getEbayPublishingToken:()=>ebayOAuth.getPublishingToken()});
 const ebayOAuth=createEbayOAuth({db});
 const unpublishedOffers=createEbayUnpublishedOffers({db,oauth:ebayOAuth,loadPhoto:({id,source,submissionId})=>{
  const table=source==='warehouse'?'warehouse_photos':source==='customer'?'photos':null;
@@ -133,10 +135,10 @@ function aiPhotoUrls(sub){
 }
 const ebayMapping=createEbayMapping({db,oauth:ebayOAuth,photoUrls:aiPhotoUrls});
 function serve(res,file,contentType,isPrivate=false){try{const f=fs.readFileSync(file);res.writeHead(200,{'Content-Type':contentType,'Cache-Control':isPrivate?'private, no-store':contentType.startsWith('image/')?'public, max-age=86400':'no-store'});res.end(f);}catch{problem(res,404,'Not found');}}
-function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/admin/new-item':'admin-new-item.html','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
+function publicFile(pathname){const routes={'/':'index.html','/submit':'index.html','/admin':'admin.html','/admin/new-item':'admin-new-item.html','/partners':'partners.html','/merchant':'merchant.html','/merchant/manifest.webmanifest':'merchant-manifest.webmanifest','/privacy':'privacy.html','/terms':'index.html'};if(/^\/sign\/[a-f0-9]{64}$/.test(pathname))return path.join(root,'public','sign.html');if(routes[pathname])return path.join(root,'public',routes[pathname]);if(pathname.startsWith('/assets/')){const candidate=path.resolve(root,'public',pathname.slice(1));if(candidate.startsWith(path.join(root,'public','assets')+path.sep))return candidate;}return null;}
 const emailLogoPng=Buffer.from(fs.readFileSync(path.join(root,'public','assets','shukchic-email-logo.b64'),'utf8').trim(),'base64');
 if(emailLogoPng.length<1000||emailLogoPng.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw Error('Invalid SHUKCHIC email PNG asset');
-const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
+const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.webmanifest':'application/manifest+json'};
 function availablePhotos(id){
  const customer=db.prepare('SELECT id,mime,size FROM photos WHERE submission_id=? ORDER BY rowid').all(id).map(x=>({...x,source:'customer'}));
  const warehouse=db.prepare('SELECT id,mime,size FROM warehouse_photos WHERE submission_id=? ORDER BY created_at,id').all(id).map(x=>({...x,source:'warehouse'}));
@@ -152,6 +154,7 @@ async function handle(req,res){
  if(process.env.RAILWAY_ENVIRONMENT_NAME === 'staging') res.setHeader('X-Robots-Tag','noindex, nofollow');
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
  const url=new URL(req.url||'/',`http://${req.headers.host||'localhost'}`);const p=url.pathname;
+  if(await merchantPortal.handle(req,res,url,{admin:admin(req),readJson,checkOrigin,throttle,ipOf,parsePhoto,categories:CATEGORIES,conditions:CONDITIONS}))return;
  if(req.method==='GET'&&p==='/assets/shukchic-email-logo.png'){res.writeHead(200,{'Content-Type':'image/png','Content-Length':emailLogoPng.length,'Cache-Control':'public, max-age=604800'});return res.end(emailLogoPng);}
  // OAuth consent returns from eBay without the SameSite=Strict staff session.
  // One-use 256-bit state, persisted on our server, authenticates the callback.
@@ -163,7 +166,7 @@ async function handle(req,res){
   const validTime=Number.isSafeInteger(exp)&&exp>Date.now()&&exp<=Date.now()+aiImageExpiresMs;
   const expect=validTime?crypto.createHmac('sha256',SESSION_SECRET).update(id+':'+exp).digest('hex'):'';
   if(!SESSION_SECRET||!validTime||!/^[a-f0-9]{64}$/.test(sig)||!crypto.timingSafeEqual(Buffer.from(sig,'hex'),Buffer.from(expect||'0'.repeat(64),'hex')))return problem(res,404,'Image unavailable.');
-  const photo=db.prepare("SELECT filename,mime FROM photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED' UNION SELECT id FROM submissions WHERE intake_source='STAFF_OWNED') UNION ALL SELECT filename,mime FROM warehouse_photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED' UNION SELECT id FROM submissions WHERE intake_source='STAFF_OWNED') LIMIT 1").get(id,id);
+  const photo=db.prepare("SELECT filename,mime FROM photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED' UNION SELECT id FROM submissions WHERE intake_source='STAFF_OWNED' UNION SELECT mi.submission_id FROM merchant_items mi JOIN merchant_accounts ma ON ma.id=mi.merchant_id WHERE ma.active=1 AND ma.signed_at IS NOT NULL) UNION ALL SELECT filename,mime FROM warehouse_photos WHERE id=? AND submission_id IN (SELECT submission_id FROM consignment_agreements WHERE state='SIGNED' UNION SELECT id FROM submissions WHERE intake_source='STAFF_OWNED' UNION SELECT mi.submission_id FROM merchant_items mi JOIN merchant_accounts ma ON ma.id=mi.merchant_id WHERE ma.active=1 AND ma.signed_at IS NOT NULL) LIMIT 1").get(id,id);
   if(!photo)return problem(res,404,'Image unavailable.');
   res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
   res.setHeader('Referrer-Policy','no-referrer');
@@ -511,6 +514,11 @@ async function handle(req,res){
   if(!item)return problem(res,404,'Item not found.');
   const inspected=listingDrafts.inspect(item);
   const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+  if(item.intake_source==='MERCHANT'){
+   const merchant=db.prepare('SELECT m.ebay_location_key,m.signed_at,m.active FROM merchant_items mi JOIN merchant_accounts m ON m.id=mi.merchant_id WHERE mi.submission_id=?').get(id);
+   if(!merchant||!merchant.active||!merchant.signed_at||!merchant.ebay_location_key||merchant.ebay_location_key!==body?.settings?.merchantLocationKey)
+    return problem(res,409,'This merchant must have an active agreement and verified eBay ship-from location selected for the offer.');
+  }
   const prepared=await unpublishedOffers.prepare({item,draft:inspected.draft,photos:availablePhotos(id).effective,
     issues:inspected.gates,duplicates,settings:body?.settings});
   audit(id,'EBAY UNPUBLISHED OFFER PREPARED: '+prepared.offerId);
@@ -525,6 +533,13 @@ async function handle(req,res){
   if(!item)return problem(res,404,'Submission not found.');
   const inspected=listingDrafts.inspect(item);
   const duplicates=item.sku?.trim()?db.prepare('SELECT COUNT(*) AS count FROM submissions WHERE sku=? AND id<>?').get(item.sku,id).count>0:false;
+  if(item.intake_source==='MERCHANT'){
+   const merchant=db.prepare('SELECT m.ebay_location_key,m.signed_at,m.active FROM merchant_items mi JOIN merchant_accounts m ON m.id=mi.merchant_id WHERE mi.submission_id=?').get(id);
+   const preparation=db.prepare('SELECT policy_json FROM ebay_offer_preparations WHERE submission_id=?').get(id);
+   let sourceLocation='';try{sourceLocation=JSON.parse(preparation?.policy_json||'{}').location||'';}catch{}
+   if(!merchant||!merchant.active||!merchant.signed_at||!merchant.ebay_location_key||merchant.ebay_location_key!==sourceLocation)
+    return problem(res,409,'Merchant shipping location or agreement changed since preparation. Reconcile with eBay before publishing.');
+  }
   const published=await unpublishedOffers.publish({item,draft:inspected.draft,photos:availablePhotos(id).effective,
    issues:inspected.gates,duplicates,confirmation:body?.confirmation});
   db.prepare("UPDATE submissions SET status='LISTED',updated_at=? WHERE id=? AND status IN ('RECEIVED','READY_TO_LIST')").run(now(),id);
@@ -574,7 +589,7 @@ async function handle(req,res){
  }
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
-  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,s.intake_source,COALESCE(ma.ebay_location_key,'') AS merchant_location_key,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN merchant_items mi ON mi.submission_id=s.id LEFT JOIN merchant_accounts ma ON ma.id=mi.merchant_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
   return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null,style_fix_available:unpublishedOffers.get(r.id).styleFixAvailable===true,weight_fix_available:unpublishedOffers.get(r.id).weightFixAvailable===true};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
@@ -760,20 +775,21 @@ async function handle(req,res){
  const update=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/update$/);
  if(req.method==='POST'&&update){const id=update[1];const old=db.prepare('SELECT * FROM submissions WHERE id=?').get(id);if(!old)return problem(res,404,'Submission not found.');const b=await readJson(req,10000);const status=clean(b.status||old.status,50);if(!ALLOWED_STATUSES.has(status))return problem(res,400,'Unknown status.');if(status==='PAID'&&old.status!=='PAID')return problem(res,409,'Record payout through the 30-day settlement ledger; status cannot be changed directly.');if(old.status==='PAID'&&status!=='PAID')return problem(res,409,'Recorded payouts are immutable; resolve corrections separately.');const verified=b.receivedVerified===undefined?old.received_verified:Number(Boolean(b.receivedVerified));
  const previousAgreement=signing.state(id);
- if(old.intake_source!=='STAFF_OWNED'&&status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
+ if(!['STAFF_OWNED','MERCHANT'].includes(old.intake_source)&&status==='ACCEPTED'&&old.status!==status&&!signing.enabled)return problem(res,409,'Set pilot agreement terms and shipping instructions before approving.');
+ if(old.intake_source==='MERCHANT'&&['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!db.prepare('SELECT 1 FROM merchant_items mi JOIN merchant_accounts m ON m.id=mi.merchant_id WHERE mi.submission_id=? AND mi.stock_confirmed=1 AND m.active=1 AND m.signed_at IS NOT NULL').get(id))return problem(res,409,'Active signed merchant partnership and confirmed merchant stock required.');
  if(status==='REJECTED'&&previousAgreement?.state==='SIGNED')return problem(res,409,'This item has a signed agreement; handle cancellation separately.');
- if(old.intake_source!=='STAFF_OWNED'&&['AWAITING_SHIPMENT','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&previousAgreement?.state!=='SIGNED')return problem(res,409,'A signed consignment agreement is required for this stage.');
- if(['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!verified)return problem(res,409,'Verify physical receipt before listing this item.');const notes=clean(b.adminNotes??old.admin_notes,3000),tracking=clean(b.tracking??old.tracking,130),sku=clean(b.sku??old.sku,90),bin=clean(b.binLocation??old.bin_location,90);const estimate=b.estimateDollars===''||b.estimateDollars==null?null:Math.round(Number(b.estimateDollars)*100);if(estimate!==null&&(!Number.isFinite(estimate)||estimate<0||estimate>10_000_000))return problem(res,400,'Invalid estimate.');db.prepare('UPDATE submissions SET status=?,admin_notes=?,tracking=?,sku=?,bin_location=?,received_verified=?,estimate_cents=?,updated_at=? WHERE id=?').run(status,notes,tracking,sku,bin,verified,estimate,now(),id);audit(id,`STATUS ${old.status} → ${status}`);
- if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&status==='ACCEPTED'){signing.acceptance(old);await sendPending(id);}
- if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&status==='REJECTED')signing.rejection(old);
- if(old.intake_source!=='STAFF_OWNED'&&status!==old.status&&['NEEDS_INFO','REJECTED'].includes(status)){
+ if(!['STAFF_OWNED','MERCHANT'].includes(old.intake_source)&&['AWAITING_SHIPMENT','READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&previousAgreement?.state!=='SIGNED')return problem(res,409,'A signed consignment agreement is required for this stage.');
+ if(['READY_TO_LIST','LISTED','SOLD','SHIPPED','PAID'].includes(status)&&!verified)return problem(res,409,old.intake_source==='MERCHANT'?'Staff must verify merchant inventory, photos and ship-from details before listing.':'Verify physical receipt before listing this item.');const notes=clean(b.adminNotes??old.admin_notes,3000),tracking=clean(b.tracking??old.tracking,130),sku=clean(b.sku??old.sku,90),bin=clean(b.binLocation??old.bin_location,90);const estimate=b.estimateDollars===''||b.estimateDollars==null?null:Math.round(Number(b.estimateDollars)*100);if(estimate!==null&&(!Number.isFinite(estimate)||estimate<0||estimate>10_000_000))return problem(res,400,'Invalid estimate.');db.prepare('UPDATE submissions SET status=?,admin_notes=?,tracking=?,sku=?,bin_location=?,received_verified=?,estimate_cents=?,updated_at=? WHERE id=?').run(status,notes,tracking,sku,bin,verified,estimate,now(),id);audit(id,`STATUS ${old.status} → ${status}`);
+ if(!['STAFF_OWNED','MERCHANT'].includes(old.intake_source)&&status!==old.status&&status==='ACCEPTED'){signing.acceptance(old);await sendPending(id);}
+ if(!['STAFF_OWNED','MERCHANT'].includes(old.intake_source)&&status!==old.status&&status==='REJECTED')signing.rejection(old);
+ if(!['STAFF_OWNED','MERCHANT'].includes(old.intake_source)&&status!==old.status&&['NEEDS_INFO','REJECTED'].includes(status)){
   const messages={NEEDS_INFO:['More information requested','We need a little more information to complete your assessment. Our team will contact you with the details.'],REJECTED:['Item assessment update','Thank you for submitting your item. We are unable to accept it for consignment at this time.']};
   const [subject,message]=messages[status];queueMail(id,`status_${status}`,old.email,`SHUKCHIC: ${subject} (${id})`,`<div style="font-family:Arial,sans-serif;max-width:580px;margin:auto;padding:24px"><img src="${PUBLIC_BASE_URL}/assets/shukchic-email-logo.png" alt="SHUKCHIC Designer Resale" width="240" height="50" style="display:block;border-radius:8px"><h2>${htmlEscape(subject)}</h2><p>Hi ${htmlEscape(old.first_name)},</p><p>${htmlEscape(message)}</p><p>Reference: <b>${id}</b></p><p>SHUKCHIC Team</p></div>`);
   await sendPending(id);
  }
  return json(res,200,{ok:true});}
  const retry=p.match(/^\/api\/admin\/submissions\/(RS-[A-F0-9]{10})\/resend$/);
- if(req.method==='POST'&&retry){const source=db.prepare('SELECT intake_source FROM submissions WHERE id=?').get(retry[1]);if(!source)return problem(res,404,'Item not found.');if(source.intake_source==='STAFF_OWNED')return problem(res,409,'Company-owned items have no customer emails to resend.');db.prepare("UPDATE mail_outbox SET state='PENDING' WHERE submission_id=? AND state IN ('FAILED','SETUP_REQUIRED')").run(retry[1]);const r=await sendPending(retry[1]);return json(res,200,r);}
+ if(req.method==='POST'&&retry){const source=db.prepare('SELECT intake_source FROM submissions WHERE id=?').get(retry[1]);if(!source)return problem(res,404,'Item not found.');if(['STAFF_OWNED','MERCHANT'].includes(source.intake_source))return problem(res,409,'Company-owned items have no customer emails to resend.');db.prepare("UPDATE mail_outbox SET state='PENDING' WHERE submission_id=? AND state IN ('FAILED','SETUP_REQUIRED')").run(retry[1]);const r=await sendPending(retry[1]);return json(res,200,r);}
  if(req.method==='GET'){
   const file=publicFile(p);if(file){const ext=path.extname(file);return serve(res,file,mime[ext]||'application/octet-stream');}
  }

@@ -1,0 +1,5 @@
+(()=>{'use strict';const form=document.getElementById('partnerApplyForm'),out=document.getElementById('partnerApplyStatus'),button=form.querySelector('button[type=submit]');
+form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;button.disabled=true;out.textContent='Sending application…';
+const data=Object.fromEntries(new FormData(form).entries());data.confirmBusinessInventory=form.elements.confirmBusinessInventory.checked;
+try{const response=await fetch('/api/partners/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Error(body.error||'Could not submit application.');
+form.reset();out.textContent='Thank you! Your partnership application has been received. Our team will review it and get back to you.';out.className='merchant-success';}catch(err){out.textContent=err.message||'Please try again.';out.className='merchant-error';}finally{button.disabled=false;}});})();

@@ -1,0 +1,18 @@
+{
+  "id": "/merchant",
+  "name": "SHUKCHIC Merchant",
+  "short_name": "SHUKCHIC",
+  "start_url": "/merchant",
+  "scope": "/merchant",
+  "display": "standalone",
+  "background_color": "#fff9f5",
+  "theme_color": "#fff7f0",
+  "icons": [
+    {
+      "src": "/assets/shukchic-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
