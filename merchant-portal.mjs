@@ -155,7 +155,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
      if(!response.ok)throw fail(502,'eBay order could not be verified.');
      order=await response.json();
     }catch(err){return send(err.status||502,{error:'Could not verify this order with eBay. No shipping task created.'}),true;}
-    if(order.orderPaymentStatus!=='PAID'||!Array.isArray(order.lineItems)||!order.lineItems.some(line=>String(line.sku||'')===m.sku))
+    if(order.orderPaymentStatus!=='PAID'||!Array.isArray(order.lineItems)||order.lineItems.length!==1||Number(order.lineItems[0].quantity)!==1||String(order.lineItems[0].sku||'')!==m.sku)
      return send(409,{error:'eBay order is not confirmed paid, or does not match this merchant item SKU.'}),true;
     if(db.prepare('SELECT 1 FROM merchant_shipping_tasks WHERE ebay_order_id=?').get(orderId))return send(409,{error:'Order already assigned to a merchant.'}),true;
     const match=order.lineItems.find(line=>String(line.sku||'')===m.sku);
@@ -178,7 +178,11 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    const b=await body(4000),storeName=safe(b.storeName,120),street=safe(b.street,180),city=safe(b.city,100),state=safe(b.state,50),postal=safe(b.postalCode,18);
    if(storeName.length<2||street.length<5||city.length<2||state.length<2||postal.length<4)return send(400,{error:'Enter your boutique name and complete real shipping address.'}),true;
    const changed=street!==user.ship_street||city!==user.city||state!==user.state||postal!==user.postal_code;
-   if(changed)db.prepare("UPDATE merchant_accounts SET store_display_name=?,ship_street=?,city=?,state=?,postal_code=?,ebay_location_key='',ebay_location_verified_at=NULL WHERE id=?").run(storeName,street,city,state,postal,user.id);
+   if(changed){
+    const activeListings=db.prepare("SELECT COUNT(*) AS n FROM merchant_items mi JOIN submissions s ON s.id=mi.submission_id WHERE mi.merchant_id=? AND s.status IN ('LISTED','SOLD','SHIPPED','PAID')").get(user.id).n;
+    if(activeListings)return send(409,{error:'You have active listings. Contact SHUKCHIC before changing the ship-from address so existing eBay listings can be updated safely.'}),true;
+    db.prepare("UPDATE merchant_accounts SET store_display_name=?,ship_street=?,city=?,state=?,postal_code=?,ebay_location_key='',ebay_location_verified_at=NULL WHERE id=?").run(storeName,street,city,state,postal,user.id);
+   }
    else db.prepare('UPDATE merchant_accounts SET store_display_name=? WHERE id=?').run(storeName,user.id);
    return send(200,{ok:true}),true;
   }
