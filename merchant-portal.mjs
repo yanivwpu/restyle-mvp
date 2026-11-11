@@ -205,7 +205,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
      if(!shipment)continue;
      const tracking=safe(shipment.shipmentTrackingNumber||shipment.trackingNumber,130);
      if(!tracking)continue;
-     db.prepare("UPDATE merchant_shipping_tasks SET tracking=?,status=CASE WHEN status='READY_TO_SHIP' THEN 'SHIPPED' ELSE status END,shipped_at=COALESCE(shipped_at,?) WHERE id=? AND merchant_id=?").run(tracking,new Date().toISOString(),task.id,user.id);
+     db.prepare("UPDATE merchant_shipping_tasks SET tracking=?,status=CASE WHEN status='READY_TO_SHIP' THEN 'TRACKING_AVAILABLE' ELSE status END WHERE id=? AND merchant_id=?").run(tracking,task.id,user.id);
      updated++;
     }catch{}
    }
@@ -242,7 +242,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
   if(method==='POST'&&p.startsWith('/api/merchant/shipping/')){
    const id=p.slice('/api/merchant/shipping/'.length),task=db.prepare('SELECT id,status FROM merchant_shipping_tasks WHERE id=? AND merchant_id=?').get(id,user.id);
    if(!task)return send(404,{error:'Shipping task not found.'}),true;
-   if(task.status!=='READY_TO_SHIP')return send(409,{error:'Already marked handed to carrier.'}),true;
+   if(!['READY_TO_SHIP','TRACKING_AVAILABLE'].includes(task.status))return send(409,{error:'Already marked handed to carrier.'}),true;
    db.prepare("UPDATE merchant_shipping_tasks SET status='DROPPED_OFF',shipped_at=? WHERE id=?").run(new Date().toISOString(),id);
    return send(200,{ok:true,requiresVerification:true}),true;
   }
