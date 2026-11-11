@@ -27,9 +27,9 @@ test('staff-owned backend avoids consent, customer email, and fictitious signatu
  assert.match(server,/ALTER TABLE submissions ADD COLUMN intake_source/);
  assert.match(server,/NOT_APPLICABLE','STAFF_OWNED'/);
  assert.match(server,/STAFF-OWNED INVENTORY CREATED - NO CUSTOMER AGREEMENT OR EMAIL/);
- assert.match(server,/old\.intake_source!=='STAFF_OWNED'&&status!==old\.status&&status==='ACCEPTED'/);
- assert.match(server,/old\.intake_source!=='STAFF_OWNED'&&status!==old\.status&&\['NEEDS_INFO','REJECTED'\]/);
- assert.match(listing,/sub\.intake_source!=='STAFF_OWNED'/);
+ assert.match(server,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(old\.intake_source\)&&status!==old\.status&&status==='ACCEPTED'/);
+ assert.match(server,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(old\.intake_source\)&&status!==old\.status&&\['NEEDS_INFO','REJECTED'\]/);
+ assert.match(listing,/!\['STAFF_OWNED','MERCHANT'\]\.includes\(sub\.intake_source\)/);
  assert.match(listing,/warehouse_photos WHERE submission_id/);
  assert.match(mapping,/sub\.intake_source!=='STAFF_OWNED'/);
 });
@@ -37,7 +37,7 @@ test('staff-owned backend avoids consent, customer email, and fictitious signatu
 test('admin detail explains ownership and does not bind missing customer email action',()=>{
  const admin=read('public/assets/admin.js');
  assert.match(admin,/SHUKCHIC-owned inventory/);
- assert.match(admin,/Company-owned inventory: no customer e-signature or emails/);
+ assert.match(admin,/No customer e-signature or emails/);
  assert.match(admin,/\$\('#retryEmail'\)\?\.addEventListener/);
  assert.doesNotThrow(()=>new Function(admin));
 });
