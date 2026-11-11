@@ -111,7 +111,7 @@ const signing=createSigning({db,dir:DATA_DIR,baseUrl:PUBLIC_BASE_URL,queueMail,s
 const listingDrafts=createListingDrafts({db,signing,audit:(id,event)=>audit(id,event)});
 const settlements=createSettlements({db,signing,audit:(id,event)=>audit(id,event)});
 const ebayDeletion=createEbayDeletionListener({db});
-const merchantPortal=createMerchantPortal({db,sessionSecret:SESSION_SECRET,uploadDir:UPLOAD_DIR,mailEnabled:MAIL_ENABLED,emailFrom:EMAIL_FROM,resendKey:RESEND_API_KEY,baseUrl:PUBLIC_BASE_URL,getEbayToken:()=>ebayOAuth.getAccessToken(),getEbayPublishingToken:()=>ebayOAuth.getPublishingToken()});
+const merchantPortal=createMerchantPortal({db,sessionSecret:SESSION_SECRET,uploadDir:UPLOAD_DIR,mailEnabled:MAIL_ENABLED,emailFrom:EMAIL_FROM,resendKey:RESEND_API_KEY,notifyEmail:ADMIN_NOTIFY_EMAIL,baseUrl:PUBLIC_BASE_URL,getEbayToken:()=>ebayOAuth.getAccessToken(),getEbayPublishingToken:()=>ebayOAuth.getPublishingToken()});
 const ebayOAuth=createEbayOAuth({db});
 const unpublishedOffers=createEbayUnpublishedOffers({db,oauth:ebayOAuth,loadPhoto:({id,source,submissionId})=>{
  const table=source==='warehouse'?'warehouse_photos':source==='customer'?'photos':null;
