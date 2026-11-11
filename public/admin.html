@@ -1,7 +1,26 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261107-add-item"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261110-staff-intake" defer></script><script src="/assets/contact-admin.js?v=20261108" defer></script><script src="/assets/approved-listings.js?v=20261110-production-ready" defer></script></head><body class="admin-body">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fffaf6"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><title>SHUKCHIC — Review Workspace</title><link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/admin.css?v=20261107-add-item"><script src="/assets/listing-admin.js?v=20261104-save-review-facts" defer></script><script src="/assets/settlement-admin.js" defer></script><script src="/assets/admin.js?v=20261110-staff-intake" defer></script><script src="/assets/contact-admin.js?v=20261108" defer></script><script src="/assets/approved-listings.js?v=20261110-production-ready" defer></script><script defer src="/assets/merchant-admin.js"></script></head><body class="admin-body">
 <header class="admin-header"><a href="/" class="brand"><img src="/assets/shukchic-logo.svg?v=20261027-black80" class="brand-logo" alt="SHUKCHIC Designer Resale"></a><span class="admin-heading">Review workspace <span class="pilot-tag" id="workspaceEnvironmentLabel">PRIVATE PILOT</span></span><button id="logoutBtn" class="small-button" hidden>Sign out</button></header>
 <main class="admin-main"><section id="loginView" class="login-box"><span class="eyebrow">STAFF ACCESS</span><h1>Welcome back.</h1><p>Sign in to review submitted items, photos and warehouse status.</p><form id="loginForm"><label>Admin password<input type="password" name="password" autocomplete="current-password" required placeholder="Enter password"></label><div id="loginError" class="admin-error" hidden></div><button type="submit" class="btn btn-primary">Sign in →</button></form><p class="hint">Enter your SHUKCHIC admin password. To set or reset it, update ADMIN_PASSWORD in Railway → the SHUKCHIC web service → Variables.</p></section>
 <section id="dashboard" hidden>
+
+<details class="contact-inbox-panel" id="merchantPartnersPanel">
+ <summary>Merchant partners <span id="merchantApplicationCount"></span></summary>
+ <p>Review boutique applications, agree commercial terms, and invite each merchant to sign and activate their mobile account. Merchant items remain subject to SHUKCHIC listing review.</p>
+ <button type="button" class="small-button" id="merchantRefreshApplications">Refresh applications</button>
+ <div id="merchantPartnerList" role="region" aria-label="Merchant applications"></div>
+ <details id="merchantShippingAssignment"><summary>Attach an eBay shipping QR / label to a merchant sale</summary>
+  <p>Purchase the label in Seller Hub first. eBay must confirm the order is paid and the item SKU matches this merchant before a label can be assigned.</p>
+  <form id="merchantAssignShippingForm">
+   <label>Merchant item reference <input name="submissionId" required placeholder="RS-…"></label>
+   <label>eBay order ID <input name="orderId" required></label>
+   <label>Carrier <select name="carrier"><option>USPS</option><option>UPS</option><option>FedEx</option></select></label>
+   <label>Purchased eBay shipping QR image or PDF <input type="file" name="label" accept="image/png,image/jpeg,image/webp,application/pdf" required></label>
+   <button type="submit" class="small-button">Verify order & attach label</button>
+   <p id="merchantAssignShippingStatus" role="status"></p>
+  </form>
+ </details>
+</details>
+
  <details class="contact-inbox-panel" id="contactInboxPanel">
   <summary>Contact messages <span id="contactMessageCount"></span></summary>
   <p>Messages submitted through the public Contact Us form are stored here even if email notifications are not yet configured.</p>
