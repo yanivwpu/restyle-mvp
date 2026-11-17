@@ -277,3 +277,11 @@
 .contact-inbox-item{border:1px solid #eddfd7;border-radius:9px;padding:14px;background:#fffaf7;overflow-wrap:anywhere}
 .contact-inbox-item p{margin:8px 0}
 .contact-inbox-message{white-space:pre-wrap;line-height:1.55}
+
+/* Items published from SHUKCHIC are a separate, read-only browsing view. */
+.approved-batch-row.is-published{grid-template-columns:minmax(0,1fr);border:1px solid #e9ddd3;border-radius:10px;padding:8px 10px}
+.approved-batch-row.is-published .approved-item{grid-column:1}
+.approved-batch-row.is-published .approved-batch-feedback{display:none}
+.approved-published-meta{grid-column:1;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:0 5px 6px;font-size:12px;color:#6e625a}
+.approved-published-meta a{font-weight:700;color:#235a46;text-decoration:underline;text-underline-offset:2px}
+.approved-published-meta a:focus-visible{outline:2px solid #235a46;outline-offset:3px}
