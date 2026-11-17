@@ -7,7 +7,7 @@ const esc=(x)=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':
 const label=(s)=>String(s||'').replace(/_/g,' ').toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase());
 const money=(n)=>n==null?'—':`$${(n/100).toFixed(2)}`;
 async function api(p,opts){const res=await fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opts});const body=await res.json();if(!res.ok)throw new Error(body.error||`HTTP ${res.status}`);return body;}
-async function init(){const r=await api('/api/admin/session');$('#loginView').hidden=r.authenticated;$('#dashboard').hidden=!r.authenticated;$('#logoutBtn').hidden=!r.authenticated;if(r.authenticated)await Promise.all([refresh(),loadEbayStatus()]);}
+async function init(){const r=await api('/api/admin/session');$('#loginView').hidden=r.authenticated;$('#dashboard').hidden=!r.authenticated;$('#logoutBtn').hidden=!r.authenticated;if(r.authenticated){await Promise.all([refresh(),loadEbayStatus()]);window.shukchicRefreshApprovedListings?.();}}
 $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();const err=$('#loginError');err.hidden=true;try{await api('/api/admin/login',{method:'POST',body:JSON.stringify({password:e.target.elements.password.value})});e.target.reset();await init();}catch(e){err.hidden=false;err.textContent=e.message;}});
 $('#logoutBtn').addEventListener('click',async()=>{await api('/api/admin/logout',{method:'POST',body:'{}'});items=[];selected=null;await init();});
 $('#refreshBtn')?.addEventListener('click',()=>{refresh();loadEbayStatus();});
