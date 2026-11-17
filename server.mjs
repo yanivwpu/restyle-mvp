@@ -288,11 +288,12 @@ async function handle(req,res){
    const businessSummary={label:refunded?'Refund or dispute — review needed':'Sale recorded — verification needed',kind:refunded?'refund':'sale',groups,unresolved:[...new Set(ambiguous)],estimatedBalanceCents:ledger.netCents,consignorPayoutEligible:false,explanation:refunded?'Customer refund or dispute activity exists. No consignor payment is currently eligible.':'Funds are recorded, but delivery, fees and the inventory match still need verification.'};
    let earnings={available:false,reason:'Not available'};
    try{
-    const response=await fetch('https://apiz.ebay.com/sell/finances/v1/order_earnings/'+encodeURIComponent(orderId),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(10000)});
+    const response=await fetch('https://apiz.ebay.com/sell/finances/v1/order_earnings/'+encodeURIComponent(orderId),{headers:{Authorization:'Bearer '+token,Accept:'application/json','X-EBAY-C-MARKETPLACE-ID':'EBAY_US'},signal:AbortSignal.timeout(10000)});
     if(response.ok){
      const item=await response.json();
      const amount=x=>x?.currency==='USD'?String(x.value||'').slice(0,35):null;
-     earnings={available:true,orderId:String(item.orderId||orderId).slice(0,100),totalSales:amount(item.totalSales),totalSellingCosts:amount(item.totalSellingCosts),netIncome:amount(item.netIncome),rawFieldsAvailable:Object.keys(item).slice(0,30)};
+     const summary=item.orderEarningsSummary||{};
+     earnings={available:true,orderId:String(item.orderId||orderId).slice(0,100),totalSales:amount(summary.grossAmount),totalSellingCosts:summary.expenses?.currency==='USD'?String(summary.expenses.value||'').slice(0,35):null,netIncome:amount(summary.orderEarnings),rawFieldsAvailable:Object.keys(summary).slice(0,30)};
     }else earnings={available:false,permissionRequired:response.status===403,reason:response.status===403?'Detailed earnings require an additional eBay-approved API permission. Existing transaction access remains active.':'eBay order earnings unavailable (HTTP '+response.status+')'};
    }catch{earnings={available:false,reason:'Order earnings could not be retrieved'};}
    if(!earnings.available)issues.push('ORDER_EARNINGS_NOT_VERIFIED');
