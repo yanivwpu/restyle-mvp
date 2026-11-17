@@ -127,17 +127,17 @@ function renderEbayOrders(){
      const dollars=n=>(n<0?'−':'')+'$'+(Math.abs(n)/100).toFixed(2);
      const cards=document.createElement('div');cards.className='ebay-money-cards';
      const makeCard=(label,value,kind)=>{const el=document.createElement('div');el.className='ebay-money-card '+kind;const t=document.createElement('small');t.textContent=label;const v=document.createElement('strong');v.textContent=value;el.append(t,v);cards.append(el);};
-     makeCard('Money received',dollars(data.ledger.creditCents),'credit');
-     makeCard('Charges & refunds',dollars(data.ledger.debitCents),'debit');
-     makeCard('Estimated balance',dollars(data.ledger.netCents),'estimate');
+     makeCard('Recorded credits',dollars(data.ledger.creditCents),'credit');
+     makeCard('Recorded debits',dollars(data.ledger.debitCents),'debit');
+     makeCard('Provisional activity balance',dollars(data.ledger.netCents),'estimate');
      detail.append(cards);
-     const explain=document.createElement('p');explain.className='ebay-plain-note';explain.textContent='Estimated from eBay activity only. Not a verified profit or consignor payment.';detail.append(explain);
+     const explain=document.createElement('p');explain.className='ebay-plain-note';explain.textContent='Transaction activity only. Funds may still be processing; this is not a payout, net profit, or approved consignor payment.';detail.append(explain);
      const verdict=document.createElement('p');verdict.className='ebay-earnings-notice';
-     verdict.textContent=data.earnings?.available?'eBay earnings available for comparison. Reported net income: '+(data.earnings.netIncome??'Not supplied')+' USD. Review is still required.':data.earnings?.reauthorizationRequired?'Official eBay earnings are not available to this app yet. Your existing transactions are still available; no reconnection needed.':'Official eBay earnings not yet available. '+(data.earnings?.reason||'');
+     verdict.textContent=data.earnings?.available?'eBay earnings available for comparison. Reported net income: '+(data.earnings.netIncome??'Not supplied')+' USD. Review is still required.':data.earnings?.permissionRequired?'Detailed eBay earnings are not authorized for this app. Sales transactions remain available. Additional developer approval may be needed; do not reconnect just to fix this.':'Official eBay earnings not yet available. '+(data.earnings?.reason||'');
      detail.append(verdict);
     }
     const readable={FINANCIAL_MAPPING_REQUIRES_REVIEW:'Confirm fees and adjustments',DELIVERY_NOT_VERIFIED:'Delivery still needs verification',NO_PAYOUT_ALLOWED:'Consignor payment not approved',REFUND_OR_DISPUTE_REQUIRES_REVIEW:'Refund or dispute needs review',ORDER_EARNINGS_NOT_VERIFIED:'Official eBay earnings not confirmed',TRANSACTION_AMOUNTS_NOT_VERIFIED:'Some amounts need verification',TRANSACTION_PAGINATION_INCOMPLETE:'Not all transactions could be loaded'};
-    const items=(data.issues||[]).filter(x=>x!=='NO_PAYOUT_ALLOWED'&&!(x==='ORDER_EARNINGS_NOT_VERIFIED'&&data.earnings?.reauthorizationRequired)).map(x=>readable[x]||ebayReadable(x));
+    const items=(data.issues||[]).filter(x=>x!=='NO_PAYOUT_ALLOWED'&&!(x==='ORDER_EARNINGS_NOT_VERIFIED'&&data.earnings?.permissionRequired)).map(x=>readable[x]||ebayReadable(x));
     const note=document.createElement('p');note.className='ebay-plain-note';note.textContent='To finish checking: '+items.join(' · ')+(data.shippingLabelCharges>1?' · '+data.shippingLabelCharges+' separate shipping charges':'');detail.append(note);action.textContent='Hide finances';
    }catch(e){detail.textContent='Financial preview failed: '+e.message;}
    finally{action.disabled=false;if(action.textContent==='Loading finances…')action.textContent='Review finances';}
