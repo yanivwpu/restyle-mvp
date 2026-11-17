@@ -355,6 +355,7 @@
      publishMessage.textContent='This listing needs an eBay connection review before another publishing attempt.';
      publishButton.disabled=true;
     }else if(offerState.state==='LIVE'&&/^\d{5,30}$/.test(offerState.listingId||'')){
+     $('#approvedEdit').disabled=true;$('#approvedEdit').style.display='none';
      const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+offerState.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View live listing on eBay';
      publishMessage.replaceChildren(link);
      publishButton.disabled=true;
@@ -390,7 +391,7 @@
  const close=()=>{approved.hidden=true;approved.setAttribute('aria-hidden','true');document.body.classList.remove('approved-modal-open');};
  function openListings(view){
    listingView=view;
-   preview.hidden=true;batchSelected.clear();
+   preview.hidden=true;livePanel.hidden=true;$('#approvedBatchOfferForm').hidden=true;batchSelected.clear();
    batchResult.textContent=view==='published'?'These are listings SHUKCHIC has published to eBay. See eBay for current selling status.':'Choose a listing to review, edit, or publish it to eBay.';
    approved.hidden=false;approved.removeAttribute('aria-hidden');document.body.classList.add('approved-modal-open');
    load();
