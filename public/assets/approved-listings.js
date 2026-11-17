@@ -8,6 +8,7 @@
  const currency=v=>v==null?'Price pending':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);
  const batchSelected=new Set();
  let batchItems=[];
+  let listingView='queue';
  const batchCount=$('#approvedBatchSelected'),batchCheck=$('#approvedBatchPreflight'),batchResult=$('#approvedBatchResults');
  function updateBatchControls(){
   batchCount.textContent=batchSelected.size+' selected (maximum 25)';
@@ -86,7 +87,7 @@
    });
    const data=await response.json();if(!response.ok)throw Error(data.error||'eBay rejected publication.');
    if(!/^\d{5,30}$/.test(String(data.listingId||'')))throw Error('No verified eBay listing ID was returned. Check its state before retrying.');
-   pendingLiveId=null;livePanel.hidden=true;batchSelected.clear();await load();
+   pendingLiveId=null;livePanel.hidden=true;batchSelected.clear();listingView='published';await load();
    batchResult.replaceChildren(document.createTextNode('Live on eBay. '));
    const link=document.createElement('a');link.href='https://www.ebay.com/itm/'+data.listingId;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View listing '+data.listingId;
    batchResult.append(link);
@@ -230,13 +231,19 @@
    try{
     const data=await fetchData('/api/admin/approved-listings');
     const list=data.items||[];
-    batchItems=list;for(const id of [...batchSelected])if(!list.some(x=>x.id===id))batchSelected.delete(id);
-    $('#approvedListingsCount').textContent=list.filter(x=>x.review_status==='REVIEWED').length;
-    if(status)status.textContent=list.length+' total · '+list.filter(x=>x.review_status==='REVIEWED').length+' staff reviewed · '+list.filter(x=>x.review_status!=='REVIEWED').length+' awaiting review';
-    if(!list.length){grid.innerHTML='<p class="detail-meta">No listing drafts yet. Create an AI listing draft from an incoming item to see it here.</p>';return;}
+    const published=list.filter(x=>x.ebay_offer_state==='LIVE');
+    const queue=list.filter(x=>x.ebay_offer_state!=='LIVE');
+    const shown=listingView==='published'?published:queue;
+    batchItems=queue;
+    for(const id of [...batchSelected])if(!queue.some(x=>x.id===id))batchSelected.delete(id);
+    $('#approvedListingsCount').textContent=queue.length;
+    $('#publishedListingsCount').textContent=published.length;
+    $('#approvedListingsHeading').textContent=listingView==='published'?'Published Listings':'Listing Queue';
+    if(status)status.textContent=listingView==='published'?published.length+' items successfully published from SHUKCHIC · eBay link and publish date saved':queue.length+' queued · '+queue.filter(x=>x.review_status==='REVIEWED').length+' staff reviewed · '+queue.filter(x=>x.review_status!=='REVIEWED').length+' awaiting review';
+    if(!shown.length){grid.innerHTML='<p class="detail-meta">'+(listingView==='published'?'No items have been published through SHUKCHIC yet. Existing listings made directly on eBay are not imported.':'No drafts or unpublished listings in the queue.')+'</p>';return;}
     grid.replaceChildren();
-    for(const item of list){
-     const wrapper=document.createElement('div');wrapper.className='approved-batch-row';
+    for(const item of shown){
+     const wrapper=document.createElement('div');wrapper.className='approved-batch-row'+(listingView==='published'?' is-published':'');
      const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.batchId=item.id;
      checkbox.setAttribute('aria-label','Select '+item.title+' for batch validation');checkbox.checked=batchSelected.has(item.id);checkbox.disabled=['LIVE','UNKNOWN','BLOCKED_READ_ONLY','PREPARING','PUBLISHING'].includes(item.ebay_offer_state);
      checkbox.addEventListener('change',()=>{
@@ -305,6 +312,22 @@
       });
       wrapper.append(checkbox,button,fix,feedback);
      }else wrapper.append(checkbox,button,feedback);
+     if(listingView==='published'){
+      const meta=document.createElement('div');meta.className='approved-published-meta';
+      const publishedAt=item.ebay_published_at?new Date(item.ebay_published_at):null;
+      const validDate=publishedAt&&!Number.isNaN(publishedAt.getTime());
+      const detail=document.createElement('span');
+      detail.textContent='SKU '+(item.sku||'Not supplied')+' · eBay #'+(item.listing_id||'Unavailable')+(validDate?' · Published '+publishedAt.toLocaleDateString():'');
+      meta.append(detail);
+      if(/^\d{5,30}$/.test(String(item.listing_id||''))){
+       const link=document.createElement('a');
+       link.href='https://www.ebay.com/itm/'+item.listing_id;
+       link.target='_blank';link.rel='noopener noreferrer';
+       link.textContent='View on eBay';
+       meta.append(link);
+      }
+      wrapper.append(meta);
+     }
      grid.append(wrapper);
     
     }
@@ -365,7 +388,15 @@
   }catch(err){preview.innerHTML='<p class="admin-error">'+esc(err.message)+'</p>';}
  }
  const close=()=>{approved.hidden=true;approved.setAttribute('aria-hidden','true');document.body.classList.remove('approved-modal-open');};
- $('#showApprovedListings').addEventListener('click',()=>{approved.hidden=false;approved.removeAttribute('aria-hidden');document.body.classList.add('approved-modal-open');load();});
+ function openListings(view){
+   listingView=view;
+   preview.hidden=true;batchSelected.clear();
+   batchResult.textContent=view==='published'?'These are listings SHUKCHIC has published to eBay. See eBay for current selling status.':'Choose a listing to review, edit, or publish it to eBay.';
+   approved.hidden=false;approved.removeAttribute('aria-hidden');document.body.classList.add('approved-modal-open');
+   load();
+  }
+  $('#showApprovedListings').addEventListener('click',()=>openListings('queue'));
+  $('#showPublishedListings').addEventListener('click',()=>openListings('published'));
  $('#showIncomingItems').addEventListener('click',close);
  $('#approvedListingsClose')?.addEventListener('click',close);
  approved.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
