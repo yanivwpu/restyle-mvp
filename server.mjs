@@ -293,7 +293,7 @@ async function handle(req,res){
      const item=await response.json();
      const amount=x=>x?.currency==='USD'?String(x.value||'').slice(0,35):null;
      earnings={available:true,orderId:String(item.orderId||orderId).slice(0,100),totalSales:amount(item.totalSales),totalSellingCosts:amount(item.totalSellingCosts),netIncome:amount(item.netIncome),rawFieldsAvailable:Object.keys(item).slice(0,30)};
-    }else earnings={available:false,reauthorizationRequired:response.status===403,reason:response.status===403?'eBay requires earnings access permission; reconnect seller to authorize it.':'eBay earnings unavailable (HTTP '+response.status+')'};
+    }else earnings={available:false,permissionRequired:response.status===403,reason:response.status===403?'Detailed earnings require an additional eBay-approved API permission. Existing transaction access remains active.':'eBay order earnings unavailable (HTTP '+response.status+')'};
    }catch{earnings={available:false,reason:'Order earnings could not be retrieved'};}
    if(!earnings.available)issues.push('ORDER_EARNINGS_NOT_VERIFIED');
    if(unverifiedAmounts)issues.push('TRANSACTION_AMOUNTS_NOT_VERIFIED');
@@ -589,7 +589,7 @@ async function handle(req,res){
  }
  // Internal read-only approved listings. No eBay inventory or offer writes occur here.
  if(req.method==='GET'&&p==='/api/admin/approved-listings'){
-  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,s.intake_source,COALESCE(ma.ebay_location_key,'') AS merchant_location_key,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN merchant_items mi ON mi.submission_id=s.id LEFT JOIN merchant_accounts ma ON ma.id=mi.merchant_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
+  const rows=db.prepare("SELECT d.submission_id AS id,d.title,d.description,d.category_id,d.category_hint,d.price_cents,d.status AS review_status,d.reviewed_at,s.brand,s.category AS submitted_category,s.condition,s.sku,s.bin_location,s.received_verified,s.status AS warehouse_status,s.intake_source,COALESCE(ma.ebay_location_key,'') AS merchant_location_key,p.state AS ebay_offer_state,p.offer_id,p.listing_id,p.updated_at AS ebay_published_at,p.last_error AS ebay_offer_error FROM ebay_listing_drafts d JOIN submissions s ON s.id=d.submission_id LEFT JOIN merchant_items mi ON mi.submission_id=s.id LEFT JOIN merchant_accounts ma ON ma.id=mi.merchant_id LEFT JOIN ebay_offer_preparations p ON p.submission_id=d.submission_id WHERE d.status IN ('REVIEWED','DRAFT') ORDER BY CASE WHEN d.status='REVIEWED' THEN 0 ELSE 1 END, d.updated_at DESC LIMIT 200").all();
   return json(res,200,{items:rows.map(r=>{const photos=availablePhotos(r.id).effective;return {...r,photo_count:photos.length,cover:photos[0]||null,style_fix_available:unpublishedOffers.get(r.id).styleFixAvailable===true,weight_fix_available:unpublishedOffers.get(r.id).weightFixAvailable===true};}),publishingEnabled:false});
  }
  const previewRoute=p.match(/^\/api\/admin\/approved-listings\/(RS-[A-F0-9]{10})\/preview$/);
