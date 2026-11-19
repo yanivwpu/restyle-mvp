@@ -1,5 +1,6 @@
 (()=>{'use strict';
-const $=id=>document.getElementById(id),sections=['merchantSignIn','merchantActivate','merchantHome'];
+const $=id=>document.getElementById(id),sections=['merchantRegister','merchantPending','merchantSignIn','merchantActivate','merchantHome'];
+let deferredInstall=null;
 const show=id=>{for(const name of sections)$(name).hidden=name!==id;$('merchantLoading').hidden=true;};
 const api=async(url,opts)=>{const r=await fetch(url,{credentials:'same-origin',...opts});const data=await r.json();if(!r.ok)throw Error(data.error||'Please try again.');return data;};
 const formBody=f=>Object.fromEntries(new FormData(f).entries());
@@ -30,15 +31,72 @@ async function startHome(data){const m=data.merchant;$('merchantBusinessName').t
 }
 $('merchantStoreForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,output=$('merchantStoreStatus'),button=form.querySelector('button[type=submit]');if(!form.reportValidity())return;button.disabled=true;output.textContent='Saving store…';try{await api('/api/merchant/store',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formBody(form))});output.textContent='Store shipping details saved.';pane('inventory');}catch(err){output.textContent=err.message;}finally{button.disabled=false;}});
 
-$('merchantLoginForm').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;try{await api('/api/merchant/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formBody(form))});await startHome(await api('/api/merchant/session'));}catch(err){$('merchantLoginError').textContent=err.message;}});
+async function checkSession(){
+ const data=await api('/api/merchant/session');
+ if(data.authenticated){await startHome(data);return;}
+ if(data.onboarding){showPending(data.onboarding);return;}
+ show(new URLSearchParams(location.search).has('start')?'merchantRegister':'merchantSignIn');
+}
+function showPending(data){
+ $('merchantPendingName').textContent=data.business||'Your boutique';
+ const approved=data.status==='INVITED'&&data.readyToSign;
+ $('merchantPendingStatus').textContent=approved?'Approved — agreement ready':data.status==='INVITATION_EXPIRED'?'Invitation needs renewal':data.status==='ACTIVE'?'Account activated — sign in':data.status==='REJECTED'?'Store application not approved':'Your store is under review';
+ $('merchantPendingText').textContent=approved?'Welcome! Review and sign your individual partnership terms below to unlock your inventory, shipping and earnings tools.':data.status==='INVITATION_EXPIRED'?'Your approval invitation has expired. Contact SHUKCHIC to renew it.':data.status==='ACTIVE'?'Your account is active. Sign in to continue.':data.status==='REJECTED'?'Contact SHUKCHIC for more information.':'We received your store details. You can reopen this app anytime to check your approval. SHUKCHIC also sends an email when your agreement is ready.';
+ $('merchantPendingAgreementForm').hidden=!approved;
+ if(approved){
+  $('merchantApprovedCommission').textContent='SHUKCHIC commission: '+data.commissionPercent+'%. See the full agreement for fees and settlement terms.';
+  $('merchantPendingTerms').textContent=data.agreementText;
+ }
+ show('merchantPending');
+}
+$('merchantRegisterForm').addEventListener('submit',async event=>{
+ event.preventDefault();const form=event.currentTarget,button=form.querySelector('button[type=submit]'),output=$('merchantRegisterError');
+ if(!form.reportValidity())return;button.disabled=true;output.textContent='';
+ try{
+  const details={...formBody(form),confirmBusinessInventory:form.elements.confirmBusinessInventory.checked};
+  await api('/api/merchant/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(details)});
+  history.replaceState({},'', '/merchant');
+  await checkSession();
+ }catch(err){output.textContent=err.message;}finally{button.disabled=false;}
+});
+$('merchantLoginForm').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;try{await api('/api/merchant/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formBody(form))});history.replaceState({},'', '/merchant');await checkSession();}catch(err){$('merchantLoginError').textContent=err.message;}});
+$('merchantGoRegister').addEventListener('click',()=>show('merchantRegister'));
+$('merchantGoLogin').addEventListener('click',()=>show('merchantSignIn'));
+$('merchantCheckApproval').addEventListener('click',()=>checkSession().catch(err=>{$('merchantPendingText').textContent=err.message;}));
+$('merchantPendingAgreementForm').addEventListener('submit',async event=>{
+ event.preventDefault();const form=event.currentTarget,btn=form.querySelector('button[type=submit]');
+ if(!form.reportValidity())return;btn.disabled=true;$('merchantPendingError').textContent='';
+ try{
+  await api('/api/merchant/onboarding/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...formBody(form),accept:form.elements.accept.checked,confirmBusinessInventory:form.elements.confirmBusinessInventory.checked})});
+  await checkSession();
+ }catch(err){$('merchantPendingError').textContent=err.message;}finally{btn.disabled=false;}
+});
+function setupInstall(){
+ const banner=$('merchantInstallBanner'),button=$('merchantInstallButton'),instructions=$('merchantInstallInstructions');
+ const standalone=window.matchMedia?.('(display-mode: standalone)').matches||navigator.standalone===true;
+ if(standalone){banner.hidden=true;return;}
+ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;button.textContent='Install app';});
+ window.addEventListener('appinstalled',()=>{banner.hidden=true;deferredInstall=null;});
+ button.addEventListener('click',async()=>{
+  if(deferredInstall){const prompt=deferredInstall;deferredInstall=null;await prompt.prompt();return;}
+  instructions.hidden=false;
+  instructions.textContent=/iPhone|iPad|iPod/.test(navigator.userAgent)?'On iPhone: open this page in Safari, tap Share, then Add to Home Screen.':'In your mobile browser menu, choose Install app or Add to Home screen. You can register after installing.';
+ });
+ if('serviceWorker' in navigator)navigator.serviceWorker.register('/merchant-sw.js',{scope:'/merchant'}).catch(()=>{});
+}
+setupInstall();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('merchantPending').hidden)checkSession().catch(()=>{});});
+setInterval(()=>{if(!document.hidden&&!$('merchantPending').hidden)checkSession().catch(()=>{});},60000);
 $('merchantRefreshTracking').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;button.textContent='Checking…';try{await api('/api/merchant/sync-shipping',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refresh();}catch(err){alert(err.message);}finally{button.disabled=false;button.textContent='Refresh tracking';}});
-$('merchantLogout').addEventListener('click',async()=>{await api('/api/merchant/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});show('merchantSignIn');});
+async function signOut(){await api('/api/merchant/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});show('merchantSignIn');}
+$('merchantLogout').addEventListener('click',signOut);
+$('merchantPendingLogout').addEventListener('click',signOut);
 const params=new URLSearchParams(location.search),invite=params.get('invite');if(invite){
  show('merchantActivate');api('/api/merchant/invite?token='+encodeURIComponent(invite)).then(data=>{const form=$('merchantActivateForm');$('merchantInviteBusiness').textContent=data.business;$('merchantInviteCommission').textContent='SHUKCHIC commission: '+data.commissionPercent+'% of the agreed sales basis. See signed terms for all deductions and payout conditions.';$('merchantAgreementText').textContent=data.agreementText;form.hidden=false;
  form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;const submit=form.querySelector('button[type=submit]');submit.disabled=true;
  try{const body={...formBody(form),token:invite,accept:form.elements.accept.checked,confirmBusinessInventory:form.elements.confirmBusinessInventory.checked};await api('/api/merchant/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});history.replaceState({},'', '/merchant');await startHome(await api('/api/merchant/session'));}catch(err){$('merchantInviteStatus').textContent=err.message;submit.disabled=false;}
  });}).catch(err=>{$('merchantInviteStatus').textContent=err.message;});
-}else{api('/api/merchant/session').then(data=>data.authenticated?startHome(data):show('merchantSignIn')).catch(()=>show('merchantSignIn'));}
+}else{checkSession().catch(()=>show('merchantSignIn'));}
 const photos=[],fileInput=$('merchantPhotoInput'),previews=$('merchantPhotoPreviews'),form=$('merchantItemForm');
 function render(){previews.replaceChildren();photos.forEach((x,i)=>{const card=put(previews,'div','', 'merchant-preview');const img=document.createElement('img');img.src=x.data;img.alt='Photo '+(i+1);card.append(img);const remove=put(card,'button','×');remove.type='button';remove.setAttribute('aria-label','Remove photo '+(i+1));remove.onclick=()=>{photos.splice(i,1);render();};});}
 function compress(file){return new Promise((resolve,reject)=>{if(!['image/jpeg','image/png','image/webp'].includes(file.type))return reject(Error('Only JPG, PNG and WebP supported.'));const reader=new FileReader();reader.onerror=()=>reject(Error('Cannot read photo.'));reader.onload=()=>{const img=new Image();img.onerror=()=>reject(Error('Cannot open image.'));img.onload=()=>{const c=document.createElement('canvas'),scale=Math.min(1,1800/Math.max(img.width,img.height));c.width=Math.max(1,Math.round(img.width*scale));c.height=Math.max(1,Math.round(img.height*scale));c.getContext('2d').drawImage(img,0,0,c.width,c.height);const data=c.toDataURL('image/jpeg',.8);if(data.length>7000000)return reject(Error('Photo too large.'));resolve({data});};img.src=reader.result;};reader.readAsDataURL(file);});}
