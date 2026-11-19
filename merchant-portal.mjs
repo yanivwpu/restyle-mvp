@@ -39,7 +39,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    return db.prepare('SELECT id,business,email,contact,city,state,postal_code,ship_street,store_display_name,commission_percent,signed_at,ebay_location_key FROM merchant_accounts WHERE id=? AND active=1').get(obj.id)||null;
   }catch{return null;}
  }
- function makeApplicantSession=id=>{
+ const makeApplicantSession=id=>{
   const payload=Buffer.from(JSON.stringify({applicationId:id,exp:Date.now()+30*86400_000,v:1})).toString('base64url');
   return payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
  }
