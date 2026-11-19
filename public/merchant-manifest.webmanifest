@@ -2,7 +2,7 @@
   "id": "/merchant",
   "name": "SHUKCHIC Merchant",
   "short_name": "SHUKCHIC",
-  "start_url": "/merchant",
+  "start_url": "/merchant?start=1",
   "scope": "/merchant",
   "display": "standalone",
   "background_color": "#fff9f5",

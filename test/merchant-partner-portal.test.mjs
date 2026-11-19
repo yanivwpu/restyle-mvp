@@ -10,7 +10,7 @@ const read=p=>fs.readFileSync(path.join(root,p),'utf8');
 test('merchant page, mobile PWA, review and private label UI are present',()=>{
  const server=read('server.mjs'),page=read('public/partners.html'),merchant=read('public/merchant.html'),admin=read('public/admin.html'),app=read('public/assets/merchant-app.js');
  assert.match(server,/createMerchantPortal/);
- assert.match(page,/id="partnerApplyForm"/);
+ assert.match(page,/Get the Merchant App/);
  assert.match(merchant,/merchantActivateForm/);
  assert.match(merchant,/merchantStoreForm/);
  assert.match(merchant,/merchantShippingList/);

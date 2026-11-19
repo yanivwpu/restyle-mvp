@@ -17,6 +17,7 @@ const digit=(n)=>Number.isFinite(Number(n))?Number(n):NaN;
 export function createMerchantPortal({db,sessionSecret,uploadDir,mailEnabled=false,emailFrom='',resendKey='',notifyEmail='',baseUrl='',getEbayToken,getEbayPublishingToken}){
  db.exec("CREATE TABLE IF NOT EXISTS merchant_applications(id TEXT PRIMARY KEY,business TEXT NOT NULL,contact TEXT NOT NULL,email TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'APPLIED',created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_accounts(id TEXT PRIMARY KEY,application_id TEXT NOT NULL UNIQUE REFERENCES merchant_applications(id),business TEXT NOT NULL,email TEXT NOT NULL UNIQUE,contact TEXT NOT NULL,city TEXT NOT NULL,state TEXT NOT NULL,postal_code TEXT NOT NULL,password_hash TEXT NOT NULL DEFAULT '',commission_percent REAL NOT NULL,agreement_text TEXT NOT NULL,agreement_sha TEXT NOT NULL,signature TEXT NOT NULL DEFAULT '',signed_at TEXT,signature_ip_hash TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS merchant_onboarding_accounts (application_id TEXT PRIMARY KEY REFERENCES merchant_applications(id),email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_invites(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),secret_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,used_at TEXT,created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_items(merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),submission_id TEXT NOT NULL UNIQUE REFERENCES submissions(id),stock_confirmed INTEGER NOT NULL,created_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS merchant_shipping_tasks(id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL REFERENCES merchant_accounts(id),submission_id TEXT NOT NULL REFERENCES submissions(id),ebay_order_id TEXT NOT NULL UNIQUE,order_total_cents INTEGER NOT NULL,carrier TEXT NOT NULL,label_filename TEXT NOT NULL,label_mime TEXT NOT NULL,tracking TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'READY_TO_SHIP',created_at TEXT NOT NULL,shipped_at TEXT)");
@@ -24,7 +25,12 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='s
  if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='store_display_name'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN store_display_name TEXT NOT NULL DEFAULT ''");
 if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='ebay_location_key'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN ebay_location_key TEXT NOT NULL DEFAULT ''");
  if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='ebay_location_verified_at'))db.exec("ALTER TABLE merchant_accounts ADD COLUMN ebay_location_verified_at TEXT");
+ if(!db.prepare('PRAGMA table_info(merchant_applications)').all().some(x=>x.name==='ship_street'))db.exec("ALTER TABLE merchant_applications ADD COLUMN ship_street TEXT NOT NULL DEFAULT ''");
  const addCookie=(res,value,remove=false)=>res.setHeader('Set-Cookie','shukchic_merchant='+value+'; HttpOnly; Path=/; SameSite=Lax; '+(process.env.NODE_ENV==='production'?'Secure; ':'')+'Max-Age='+(remove?0:30*86400));
+ const addApplicantCookie=(res,value,remove=false)=>{
+  const prior=res.getHeader('Set-Cookie'),cookie='shukchic_applicant='+value+'; HttpOnly; Path=/; SameSite=Lax; '+(process.env.NODE_ENV==='production'?'Secure; ':'')+'Max-Age='+(remove?0:30*86400);
+  res.setHeader('Set-Cookie',[...(prior?Array.isArray(prior)?prior:[prior]:[]),cookie]);
+ };
  const makeSession=id=>{const payload=Buffer.from(JSON.stringify({id,exp:Date.now()+30*86400_000,v:1})).toString('base64url');return payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');};
  function logged(req){
   const token=clientCookie(req,'shukchic_merchant');const [p,signature]=token.split('.');if(!p||!signature||p.length>500)return null;
@@ -32,6 +38,32 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
   try{const obj=JSON.parse(Buffer.from(p,'base64url').toString('utf8'));if(obj.v!==1||obj.exp<Date.now())return null;
    return db.prepare('SELECT id,business,email,contact,city,state,postal_code,ship_street,store_display_name,commission_percent,signed_at,ebay_location_key FROM merchant_accounts WHERE id=? AND active=1').get(obj.id)||null;
   }catch{return null;}
+ }
+ const makeApplicantSession=id=>{
+  const payload=Buffer.from(JSON.stringify({applicationId:id,exp:Date.now()+30*86400_000,v:1})).toString('base64url');
+  return payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
+ }
+ function loggedApplicant(req){
+  const cookie=clientCookie(req,'shukchic_applicant'),[payload,signature]=cookie.split('.');
+  if(!payload||!signature||payload.length>500)return null;
+  const expected=crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
+  if(!equal(signature,expected))return null;
+  try{
+   const data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+   if(data.v!==1||data.exp<Date.now()||!/^[a-f0-9-]{36}$/.test(String(data.applicationId||'')))return null;
+   return db.prepare('SELECT a.*,o.email AS login_email FROM merchant_applications a JOIN merchant_onboarding_accounts o ON o.application_id=a.id WHERE a.id=?').get(data.applicationId)||null;
+  }catch{return null;}
+ }
+ function applicantView(req){
+  const app=loggedApplicant(req);if(!app)return null;
+  const result={business:app.business,status:app.status,storeName:app.business,contact:app.contact,city:app.city,state:app.state,submittedAt:app.created_at};
+  if(app.status==='INVITED'){
+   const account=db.prepare('SELECT business,commission_percent,agreement_text FROM merchant_accounts WHERE application_id=? AND active=0').get(app.id);
+   const validInvite=db.prepare('SELECT 1 FROM merchant_invites i JOIN merchant_accounts m ON m.id=i.merchant_id WHERE m.application_id=? AND i.used_at IS NULL AND i.expires_at>?').get(app.id,new Date().toISOString());
+   if(account&&validInvite){result.agreementText=account.agreement_text;result.commissionPercent=account.commission_percent;result.readyToSign=true;}
+   else result.status='INVITATION_EXPIRED';
+  }
+  return result;
  }
  function invite(token){
   if(!/^[A-Za-z0-9_-]{32,80}$/.test(String(token||'')))return null;
@@ -46,7 +78,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
  async function handle(req,res,url,helpers){
   const p=url.pathname,method=req.method||'GET',send=(status,v)=>stringify(res,status,v);
   const body=async(limit=26000)=>helpers.readJson(req,limit);
-  const publicOp=['/api/partners/apply','/api/merchant/invite','/api/merchant/activate','/api/merchant/login'].includes(p);
+  const publicOp=['/api/partners/apply','/api/merchant/register','/api/merchant/invite','/api/merchant/activate','/api/merchant/login','/api/merchant/onboarding/activate'].includes(p);
   if(!(p.startsWith('/api/partners/')||p.startsWith('/api/merchant/')||p.startsWith('/api/admin/partners')||p==='/api/admin/merchant-orders'))return false;
   if(method==='POST'&&!helpers.checkOrigin(req))throw fail(403,'Request origin not permitted.');
   if(method==='POST'&&!helpers.throttle(req,'merchant_'+p,publicOp?8:40,3600_000))throw fail(429,'Too many requests. Please try again later.');
@@ -58,6 +90,27 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    db.prepare('INSERT INTO merchant_applications(id,business,contact,email,phone,city,state,postal_code,description,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,business,contact,email,phone,city,state,postal,description,time);
    if(validEmail(notifyEmail))await mail(notifyEmail,'New SHUKCHIC boutique partnership application','<h2>New merchant partner application</h2><p>'+html(business)+' · '+html(contact)+' · '+html(email)+'</p><p>Shipping city: '+html(city)+', '+html(state)+' '+html(postal)+'</p><p>Review the application in SHUKCHIC Admin.</p>','merchant-apply-'+id);
    return send(201,{ok:true,reference:id}),true;
+  }
+  if(method==='POST'&&p==='/api/merchant/register'){
+   const x=await body(9000),business=safe(x.business,120),contact=safe(x.contact,100),
+    email=safe(x.email,254).toLowerCase(),phone=safe(x.phone,40),
+    street=safe(x.street,180),city=safe(x.city,100),state=safe(x.state,50),
+    postal=safe(x.postalCode,18),description=safe(x.description,1300),password=String(x.password||'');
+   if(business.length<2||contact.length<2||!validEmail(email)||street.length<5||city.length<2||state.length<2||postal.length<4||!x.confirmBusinessInventory||password.length<12||password.length>150)
+    return send(400,{error:'Complete your store information, confirm you own the inventory, and choose a password with at least 12 characters.'}),true;
+   if(db.prepare('SELECT 1 FROM merchant_applications WHERE lower(email)=? LIMIT 1').get(email)||
+      db.prepare('SELECT 1 FROM merchant_accounts WHERE lower(email)=? LIMIT 1').get(email))
+    return send(409,{error:'This email already has an application or merchant account. Sign in, or contact SHUKCHIC if your invitation was lost.'}),true;
+   const id=crypto.randomUUID(),stamp=new Date().toISOString();
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    db.prepare('INSERT INTO merchant_applications(id,business,contact,email,phone,city,state,postal_code,description,ship_street,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,business,contact,email,phone,city,state,postal,description,street,stamp);
+    db.prepare('INSERT INTO merchant_onboarding_accounts(application_id,email,password_hash,created_at) VALUES(?,?,?,?)').run(id,email,passwordHash(password),stamp);
+    db.exec('COMMIT');
+   }catch(err){db.exec('ROLLBACK');if(String(err.message).includes('UNIQUE'))return send(409,{error:'This email is already registered.'}),true;throw err;}
+   addApplicantCookie(res,makeApplicantSession(id));
+   if(validEmail(notifyEmail))await mail(notifyEmail,'New SHUKCHIC merchant app registration','<h2>Merchant app registration</h2><p>'+html(business)+' · '+html(contact)+' · '+html(email)+'</p><p>Ship-from: '+html(street)+', '+html(city)+', '+html(state)+' '+html(postal)+'</p><p>Review and approve terms in SHUKCHIC Admin.</p>','merchant-app-register-'+id);
+   return send(201,{ok:true,onboarding:applicantView(req)||{business,status:'APPLIED'}}),true;
   }
   if(method==='GET'&&p==='/api/merchant/invite'){
    const info=invite(url.searchParams.get('token'));if(!info||info.used_at||Date.parse(info.expires_at)<Date.now())return send(404,{error:'Invitation unavailable or expired.'}),true;
@@ -79,15 +132,46 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    addCookie(res,makeSession(info.id));return send(200,{ok:true}),true;
   }
   if(method==='POST'&&p==='/api/merchant/login'){
-   const b=await body(2500),email=safe(b.email,254).toLowerCase(),m=db.prepare('SELECT id,password_hash,active FROM merchant_accounts WHERE email=?').get(email);
-   if(!m||!m.active||!checkPassword(String(b.password||''),m.password_hash))return send(401,{error:'Incorrect merchant credentials.'}),true;
-   addCookie(res,makeSession(m.id));return send(200,{ok:true}),true;
+   const b=await body(2500),email=safe(b.email,254).toLowerCase(),password=String(b.password||'');
+   if(!validEmail(email)||password.length>150)return send(401,{error:'Incorrect merchant credentials.'}),true;
+   const m=db.prepare('SELECT id,password_hash,active FROM merchant_accounts WHERE email=?').get(email);
+   if(m?.active&&checkPassword(password,m.password_hash)){
+    addCookie(res,makeSession(m.id));addApplicantCookie(res,'',true);
+    return send(200,{ok:true}),true;
+   }
+   const pending=db.prepare('SELECT application_id,password_hash FROM merchant_onboarding_accounts WHERE email=?').get(email);
+   if(pending&&checkPassword(password,pending.password_hash)){
+    addApplicantCookie(res,makeApplicantSession(pending.application_id));
+    return send(200,{ok:true,pending:true}),true;
+   }
+   return send(401,{error:'Incorrect merchant credentials.'}),true;
   }
-  if(method==='POST'&&p==='/api/merchant/logout'){addCookie(res,'',true);return send(200,{ok:true}),true;}
+  if(method==='POST'&&p==='/api/merchant/logout'){addCookie(res,'',true);addApplicantCookie(res,'',true);return send(200,{ok:true}),true;}
+  if(method==='POST'&&p==='/api/merchant/onboarding/activate'){
+   const applicant=loggedApplicant(req);if(!applicant||applicant.status!=='INVITED')return send(403,{error:'An approved merchant registration is required.'}),true;
+   const b=await body(4000),signature=safe(b.signature,120);
+   if(!b.accept||!b.confirmBusinessInventory||signature.length<3)return send(400,{error:'Read the agreement, confirm your inventory and provide your full name as a signature.'}),true;
+   const account=db.prepare('SELECT id,signed_at,active FROM merchant_accounts WHERE application_id=?').get(applicant.id);
+   const invite=account&&db.prepare('SELECT id FROM merchant_invites WHERE merchant_id=? AND used_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1').get(account.id,new Date().toISOString());
+   if(!invite||account.active||account.signed_at)return send(409,{error:'Your invitation is unavailable or expired. Ask SHUKCHIC for a renewed invitation.'}),true;
+   const onboard=db.prepare('SELECT password_hash FROM merchant_onboarding_accounts WHERE application_id=?').get(applicant.id);
+   if(!onboard)return send(409,{error:'Merchant registration not found.'}),true;
+   const stamp=new Date().toISOString();
+   db.exec('BEGIN IMMEDIATE');try{
+    const used=db.prepare('UPDATE merchant_invites SET used_at=? WHERE id=? AND used_at IS NULL').run(stamp,invite.id);
+    if(used.changes!==1)throw fail(409,'Invitation already used.');
+    db.prepare('UPDATE merchant_accounts SET password_hash=?,signature=?,signed_at=?,signature_ip_hash=?,active=1 WHERE id=? AND active=0').run(onboard.password_hash,signature,stamp,sha(helpers.ipOf(req)+':'+sessionSecret),account.id);
+    db.prepare("UPDATE merchant_applications SET status='ACTIVE' WHERE id=?").run(applicant.id);
+    db.prepare('DELETE FROM merchant_onboarding_accounts WHERE application_id=?').run(applicant.id);
+    db.exec('COMMIT');
+   }catch(err){db.exec('ROLLBACK');throw err;}
+   addCookie(res,makeSession(account.id));addApplicantCookie(res,'',true);
+   return send(200,{ok:true}),true;
+  }
   if(p.startsWith('/api/admin/')){
    if(!helpers.admin)return send(401,{error:'Admin sign-in required.'}),true;
    if(method==='GET'&&p==='/api/admin/partners'){
-    const applications=db.prepare('SELECT * FROM merchant_applications ORDER BY created_at DESC LIMIT 200').all();
+    const applications=db.prepare('SELECT a.*,EXISTS(SELECT 1 FROM merchant_onboarding_accounts o WHERE o.application_id=a.id) AS in_app_onboarding FROM merchant_applications a ORDER BY a.created_at DESC LIMIT 200').all();
     const merchants=db.prepare('SELECT id,application_id,business,email,city,state,postal_code,commission_percent,signed_at,active,ship_street,ebay_location_key FROM merchant_accounts ORDER BY created_at DESC').all();
     return send(200,{applications,merchants}),true;
    }
@@ -101,6 +185,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
     if(!m){const duplicate=db.prepare('SELECT id FROM merchant_accounts WHERE email=?').get(a.email);if(duplicate)return send(409,{error:'Merchant email already registered.'}),true;
       const id=crypto.randomUUID();db.prepare('INSERT INTO merchant_accounts(id,application_id,business,email,contact,city,state,postal_code,commission_percent,agreement_text,agreement_sha,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,a.id,a.business,a.email,a.contact,a.city,a.state,a.postal_code,pct,terms,sha(terms),stamp);
       m=db.prepare('SELECT * FROM merchant_accounts WHERE id=?').get(id);
+      if(a.ship_street)db.prepare('UPDATE merchant_accounts SET ship_street=?,store_display_name=? WHERE id=?').run(a.ship_street,a.business,id);
     }else{
       db.prepare('UPDATE merchant_accounts SET commission_percent=?,agreement_text=?,agreement_sha=? WHERE id=?').run(pct,terms,sha(terms),m.id);
     }
@@ -109,8 +194,11 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
     db.prepare('INSERT INTO merchant_invites(id,merchant_id,secret_hash,expires_at,created_at) VALUES(?,?,?,?,?)').run(id,m.id,sha(raw),expires,stamp);
     db.prepare("UPDATE merchant_applications SET status='INVITED' WHERE id=?").run(a.id);
     const link=baseUrl+'/merchant?invite='+encodeURIComponent(raw);
-    const sent=await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
-    return send(200,{ok:true,emailSent:sent,inviteUrl:link,expiresAt:expires}),true;
+    const inApp=!!db.prepare('SELECT 1 FROM merchant_onboarding_accounts WHERE application_id=?').get(a.id);
+    const sent=inApp?
+     await mail(m.email,'SHUKCHIC store approved — open your merchant app','<h2>Your boutique is approved!</h2><p>Open the SHUKCHIC Merchant App on your phone, review your partnership agreement, sign it, and start listing.</p><p><a href="'+baseUrl+'/merchant">Open your Merchant App</a></p><p>Your approval invitation is valid for seven days.</p>','merchant-invite-'+id):
+     await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
+    return send(200,{ok:true,emailSent:sent,inAppOnboarding:inApp,...(inApp?{}:{inviteUrl:link}),expiresAt:expires}),true;
    }
    const loc=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/location$/);
    if(method==='POST'&&loc){
@@ -174,7 +262,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
    return send(404,{error:'Unknown partner admin action.'}),true;
   }
   if(method==='GET'&&p==='/api/merchant/session'){
-   const u=logged(req);return send(200,{authenticated:!!u,merchant:u?responseAccount(u):null}),true;
+   const u=logged(req);return send(200,{authenticated:!!u,merchant:u?responseAccount(u):null,onboarding:u?null:applicantView(req)}),true;
   }
   const user=owner(req,res);if(!user)return true;
   if(method==='POST'&&p==='/api/merchant/store'){

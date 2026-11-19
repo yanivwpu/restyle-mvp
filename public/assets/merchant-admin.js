@@ -8,11 +8,13 @@ async function load(){
  try{
   const data=await api('/api/admin/partners');items.replaceChildren();
   $('merchantApplicationCount').textContent='('+data.applications.filter(x=>x.status==='APPLIED').length+')';
-  if(!data.applications.length)append(items,'p','No merchant applications yet. Share the Partner with SHUKCHIC page to start outreach.');
+  if(!data.applications.length)append(items,'p','No merchant stores registered yet. Share the Get Merchant App link to start onboarding.');
   for(const entry of data.applications){
    const card=append(items,'div','','merchant-admin-card');
    append(card,'strong',entry.business+' · '+entry.status);
    append(card,'p',entry.contact+' · '+entry.email+' · '+entry.city+', '+entry.state+' '+entry.postal_code);
+   if(entry.ship_street)append(card,'p','Registered ship-from address: '+entry.ship_street+' · Confirm this address before approval.');
+   if(entry.in_app_onboarding)append(card,'p','Registered through the merchant app · status visible on their phone.');
    if(entry.description)append(card,'p',entry.description);
    if(entry.status==='ACTIVE'){
     const account=data.merchants.find(x=>x.application_id===entry.id);
@@ -31,7 +33,7 @@ async function load(){
     continue;
    }
    const wrapper=append(card,'details','','merchant-admin-approval');
-   append(wrapper,'summary',entry.status==='INVITED'?'Review invitation':'Review & invite merchant');
+   append(wrapper,'summary',entry.status==='INVITED'?'Review current approval':entry.in_app_onboarding?'Review & approve store':'Review & invite merchant');
    const form=append(wrapper,'form','');
    const commissionLabel=append(form,'label','SHUKCHIC commission (%)','merchant-admin-field');
    const commission=document.createElement('input');commission.type='number';commission.min='0';commission.max='80';commission.step='1';commission.required=true;commissionLabel.append(commission);
@@ -39,12 +41,16 @@ async function load(){
    const terms=document.createElement('textarea');terms.required=true;terms.minLength=350;terms.rows=10;terms.placeholder='Paste the reviewed merchant agreement for this specific boutique, including commission basis, payouts, shipping responsibility, returns, liability, term and termination.';termsLabel.append(terms);
    const review=append(form,'label','','merchant-admin-check');const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.required=true;
    review.append(checkbox,document.createTextNode(' I reviewed and completed the commercial and legal terms for this merchant.'));
-   const button=append(form,'button','Approve & issue invitation','small-button');button.type='submit';
+   const button=append(form,'button',entry.in_app_onboarding?'Approve & notify in app':'Approve & issue invitation','small-button');button.type='submit';
    const result=append(form,'p','','merchant-admin-status');
    form.addEventListener('submit',async e=>{e.preventDefault();result.textContent='';if(!form.reportValidity())return;button.disabled=true;
     try{const response=await api('/api/admin/partners/'+encodeURIComponent(entry.id)+'/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commissionPercent:Number(commission.value),agreementText:terms.value,reviewedTerms:checkbox.checked})});
-      result.replaceChildren();append(result,'span',response.emailSent?'Invitation emailed. ':'Invitation created. Share the private activation link securely: ');
-      const input=document.createElement('input');input.value=response.inviteUrl;input.readOnly=true;input.setAttribute('aria-label','Merchant private invitation');result.append(input);input.addEventListener('focus',()=>input.select());
+      result.replaceChildren();
+      if(response.inAppOnboarding){append(result,'span',response.emailSent?'Approved. App status updated and email sent.':'Approved. Merchant can open the app to sign; email was not delivered.');}
+      else{
+       append(result,'span',response.emailSent?'Invitation emailed. ':'Invitation created. Share the private activation link securely: ');
+       const input=document.createElement('input');input.value=response.inviteUrl;input.readOnly=true;input.setAttribute('aria-label','Merchant private invitation');result.append(input);input.addEventListener('focus',()=>input.select());
+      }
     }catch(err){result.textContent=err.message;}finally{button.disabled=false;}
    });
   }
