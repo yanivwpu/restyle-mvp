@@ -55,6 +55,9 @@ test('app-first merchant registration, pending approval, in-app signing and prot
   const terms='Merchant supplies verified authentic merchandise from the registered business location and maintains current stock. SHUKCHIC may list approved goods and communicate with buyers through its seller account. Merchant ships when instructed, complies with dispatch schedules, and resolves returns or disputes according to the agreed contract. The contract specifies the payment calculation and commission, the applicable return and dispute deductions, data privacy obligations, shipping label handling, cancellation, and settlement verification. SHUKCHIC commission is twenty-five percent. Both parties agree to independent review before eBay publication.';
   const approve=await post('/api/admin/partners/'+application.id+'/invite',{commissionPercent:25,agreementText:terms,reviewedTerms:true},staffCookie);
   assert.equal(approve.status,200);
+  const approval=await approve.json();
+  assert.equal(approval.inAppOnboarding,true);
+  assert.equal(approval.inviteUrl,undefined,'App-first merchants should not be sent back through invitation links');
   const reviewed=(await (await get('/api/merchant/session',pendingCookie)).json()).onboarding;
   assert.equal(reviewed.status,'INVITED');assert.equal(reviewed.readyToSign,true);
   assert.equal(reviewed.commissionPercent,25);
