@@ -171,7 +171,7 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
   if(p.startsWith('/api/admin/')){
    if(!helpers.admin)return send(401,{error:'Admin sign-in required.'}),true;
    if(method==='GET'&&p==='/api/admin/partners'){
-    const applications=db.prepare('SELECT * FROM merchant_applications ORDER BY created_at DESC LIMIT 200').all();
+    const applications=db.prepare('SELECT a.*,EXISTS(SELECT 1 FROM merchant_onboarding_accounts o WHERE o.application_id=a.id) AS in_app_onboarding FROM merchant_applications a ORDER BY a.created_at DESC LIMIT 200').all();
     const merchants=db.prepare('SELECT id,application_id,business,email,city,state,postal_code,commission_percent,signed_at,active,ship_street,ebay_location_key FROM merchant_accounts ORDER BY created_at DESC').all();
     return send(200,{applications,merchants}),true;
    }
@@ -194,8 +194,11 @@ if(!db.prepare('PRAGMA table_info(merchant_accounts)').all().some(x=>x.name==='e
     db.prepare('INSERT INTO merchant_invites(id,merchant_id,secret_hash,expires_at,created_at) VALUES(?,?,?,?,?)').run(id,m.id,sha(raw),expires,stamp);
     db.prepare("UPDATE merchant_applications SET status='INVITED' WHERE id=?").run(a.id);
     const link=baseUrl+'/merchant?invite='+encodeURIComponent(raw);
-    const sent=await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
-    return send(200,{ok:true,emailSent:sent,inviteUrl:link,expiresAt:expires}),true;
+    const inApp=!!db.prepare('SELECT 1 FROM merchant_onboarding_accounts WHERE application_id=?').get(a.id);
+    const sent=inApp?
+     await mail(m.email,'SHUKCHIC store approved — open your merchant app','<h2>Your boutique is approved!</h2><p>Open the SHUKCHIC Merchant App on your phone, review your partnership agreement, sign it, and start listing.</p><p><a href="'+baseUrl+'/merchant">Open your Merchant App</a></p><p>Your approval invitation is valid for seven days.</p>','merchant-invite-'+id):
+     await mail(m.email,'SHUKCHIC merchant partnership invitation','<h2>Welcome to SHUKCHIC</h2><p>Review and sign your merchant partnership terms, then activate your secure mobile account.</p><p><a href="'+link+'">Activate your merchant account</a></p><p>This link expires in seven days.</p>','merchant-invite-'+id);
+    return send(200,{ok:true,emailSent:sent,inAppOnboarding:inApp,...(inApp?{}:{inviteUrl:link}),expiresAt:expires}),true;
    }
    const loc=p.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/location$/);
    if(method==='POST'&&loc){
