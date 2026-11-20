@@ -74,3 +74,56 @@
 .partner-hero .merchant-payout-explain,.partner-hero .merchant-payout-disclaimer{font-size:12px;line-height:1.6;margin:11px 0 0;color:#6f625d}
 .partner-hero .merchant-payout-disclaimer{padding-top:9px;border-top:1px solid #efe8e1;font-style:italic}
 @media(max-width:460px){.merchant-payout-content{padding:13px 11px}.merchant-payout-table{font-size:13px}.merchant-payout-table th,.merchant-payout-table td{padding:9px 5px}.merchant-payout-disclosure{max-width:100%}}
+
+
+/* Boutique page: align its header to the homepage and improve desktop readability.
+   Scoped to merchant-public so the installed merchant app and its forms stay unchanged. */
+body.merchant-public{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.merchant-public .merchant-head{padding:0;min-height:0;background:#fffaf8;border-bottom:1px solid #eee6df}
+.merchant-public .merchant-head-inner{width:100%;max-width:1200px;margin:0 auto;padding:0 32px;min-height:98px;display:flex;justify-content:space-between;align-items:center;gap:24px}
+.merchant-public .merchant-head-brand{display:inline-flex;align-items:center;flex:none;line-height:1}
+.merchant-public .merchant-head .merchant-head-logo{display:block;width:206px;height:auto;aspect-ratio:980/205;max-width:100%;border:0;background:transparent}
+.merchant-public .merchant-head-link{font-size:14px;font-weight:700;white-space:nowrap}
+@media(min-width:1101px){
+ .merchant-public .merchant-head-inner{max-width:1496px;min-height:108px;padding:5px clamp(32px,2.8vw,44px)}
+ .merchant-public .merchant-head-link{font-size:15.4px}
+ .merchant-public .partner-hero{max-width:1496px;min-height:610px;padding:76px clamp(32px,2.8vw,44px) 82px;grid-template-columns:1.15fr .85fr;gap:clamp(42px,4.5vw,72px)}
+ .merchant-public .partner-hero h1{font-size:clamp(70px,5.9vw,88px);line-height:1.04;letter-spacing:-.055em;margin:25px 0}
+ .merchant-public .partner-hero>.eyebrow,.merchant-public .partner-hero .eyebrow{font-size:14px}
+ .merchant-public .partner-hero>div>p{font-size:20px;line-height:1.75;max-width:700px}
+ .merchant-public .partner-visual{min-height:375px;padding:47px;border-radius:32px}
+ .merchant-public .partner-visual-icon{font-size:109px;height:131px}
+ .merchant-public .partner-visual h2{font-size:31px;line-height:1.25}
+ .merchant-public .partner-visual p{font-size:18px;line-height:1.55}
+ .merchant-public .partner-steps{padding:82px 0 92px}
+ .merchant-public .partner-steps>h2,.merchant-public .partner-step-grid{max-width:1408px;width:calc(100% - 2 * clamp(32px,2.8vw,44px))}
+ .merchant-public .partner-steps>h2{font-size:41px;margin-bottom:38px}
+ .merchant-public .partner-step-grid{gap:24px}
+ .merchant-public .partner-step-grid article{padding:29px;border-radius:19px}
+ .merchant-public .partner-step-grid strong{font-size:17px}
+ .merchant-public .partner-step-grid h3{font-size:23px;line-height:1.2}
+ .merchant-public .partner-step-grid p{font-size:16.5px;line-height:1.65}
+ .merchant-public .partner-app-card{max-width:1408px;width:calc(100% - 2 * clamp(32px,2.8vw,44px));margin:62px auto 86px;padding:44px;gap:32px}
+ .merchant-public .partner-app-card h2{font-size:clamp(34px,3.5vw,44px)}
+ .merchant-public .partner-app-card p{font-size:17px}
+ .merchant-public .partner-app-card .partner-install-note{font-size:14px}
+ .merchant-public .merchant-app-install-card{width:274px;min-height:214px}
+ .merchant-public .merchant-payout-disclosure summary{font-size:16px}
+}
+@media(min-width:801px) and (max-width:1100px){
+ .merchant-public .merchant-head .merchant-head-logo{width:168px}
+ .merchant-public .partner-hero{max-width:100%;padding:70px 32px;gap:34px;grid-template-columns:1.15fr .85fr}
+ .merchant-public .partner-hero h1{font-size:clamp(51px,6vw,65px)}
+ .merchant-public .partner-hero>div>p{font-size:18px}
+ .merchant-public .partner-step-grid article{padding:21px}
+ .merchant-public .partner-step-grid h3{font-size:20px}
+}
+@media(max-width:800px){
+ .merchant-public .merchant-head-inner{padding:0 22px;min-height:98px}
+ .merchant-public .merchant-head .merchant-head-logo{width:155px}
+}
+@media(max-width:480px){
+ .merchant-public .merchant-head-inner{min-height:80px}
+ .merchant-public .merchant-head .merchant-head-logo{width:126px}
+ .merchant-public .merchant-head-link{font-size:13px}
+}
