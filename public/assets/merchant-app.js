@@ -82,17 +82,16 @@ $('merchantPendingAgreementForm').addEventListener('submit',async event=>{
 });
 function setupInstall(){
  const button=$('merchantInstallButton'),instructions=$('merchantInstallInstructions'),copy=$('merchantCopyLink'),status=$('merchantCopyStatus');
- if(!installedMode()){
-  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+ const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
   const mobile=/Android|iPhone|iPad|iPod/.test(navigator.userAgent)||ios;
   instructions.textContent=ios?'On iPhone or iPad, open Safari, tap Share, select Add to Home Screen, and confirm Open as Web App. Then tap the SHUKCHIC icon.':
     /Android/.test(navigator.userAgent)?'On Android, tap Install Merchant App. If no prompt appears, use the browser menu and choose Install app or Add to Home screen. Then tap the SHUKCHIC icon.':
     'On your phone, open shukchic.com/merchant in Safari (iPhone) or Chrome (Android), then add it to your Home Screen. Open the SHUKCHIC icon to register.';
-  if(!mobile){button.textContent='Open link on your phone';button.addEventListener('click',()=>{instructions.focus?.();});}
- }
+ if(!mobile)button.textContent='Copy app link for phone';
  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;});
  window.addEventListener('appinstalled',()=>{deferredInstall=null;button.textContent='Open SHUKCHIC from Home Screen';instructions.textContent='Installed. Open the SHUKCHIC icon from your Home Screen to register or sign in.';});
  button.addEventListener('click',async()=>{
+  if(!mobile){await copyAppLink();return;}
   if(deferredInstall){
    const prompt=deferredInstall;deferredInstall=null;
    try{await prompt.prompt();}catch{}
@@ -100,10 +99,11 @@ function setupInstall(){
    instructions.setAttribute('tabindex','-1');instructions.focus();
   }
  });
- copy.addEventListener('click',async()=>{
+ async function copyAppLink(){
   try{await navigator.clipboard.writeText('https://shukchic.com/merchant');status.textContent='App link copied';}
   catch{status.textContent='Open shukchic.com/merchant on your phone';}
- });
+ }
+ copy.addEventListener('click',copyAppLink);
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/merchant-sw.js',{scope:'/merchant'}).catch(()=>{});
 }
 setupInstall();
