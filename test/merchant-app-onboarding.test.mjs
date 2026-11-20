@@ -23,7 +23,7 @@ test('app-first merchant registration, pending approval, in-app signing and prot
   const merchant=await (await get('/merchant?start=1')).text();
   const worker=await get('/merchant-sw.js'),manifest=await get('/merchant/manifest.webmanifest');
   assert.match(homepage,/Get the Merchant App/);
-  assert.match(partners,/Get the Merchant App/);
+  assert.match(partners,/Install Merchant App/);
   assert.doesNotMatch(partners,/id="partnerApplyForm"/);
   assert.match(merchant,/id="merchantRegisterForm"/);
   assert.match(merchant,/id="merchantPendingAgreementForm"/);
