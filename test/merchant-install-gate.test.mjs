@@ -50,9 +50,18 @@ test('partner page has merchant payout caveat and a phone graphic, not redundant
  const hero=page.split('<section class="partner-hero">')[1].split('</section>')[0];
  assert.doesNotMatch(hero,/class="merchant-primary"/);
  assert.match(hero,/up to 80% of eligible net sale proceeds/);
- assert.match(hero,/href="#merchant-pay-schedule"/);
- assert.match(page,/id="merchant-pay-schedule"/);
- assert.match(page,/payout timing are set in the partnership agreement/);
+ assert.match(hero,/<details class="merchant-payout-disclosure">/);
+ assert.match(hero,/<summary>Check pay schedule<\/summary>/);
+ assert.match(hero,/class="merchant-payout-table"/);
+ for(const [tier,share] of [['$100–$499','60%'],['$500–$999','70%'],['$1,000+','80%']]){
+  assert.ok(hero.includes(tier),tier+' tier is missing');
+  assert.ok(hero.includes('<strong>'+share+'</strong>'),share+' merchant share missing');
+ }
+ assert.match(hero,/net sale proceeds/);
+ assert.match(hero,/30 days after confirmed delivery/);
+ assert.match(hero,/individual merchant partnership agreement/);
+ assert.doesNotMatch(page,/href="#merchant-pay-schedule"/);
+ assert.doesNotMatch(page,/id="merchant-pay-schedule"/);
  assert.match(page,/class="merchant-app-install-card"/);
  assert.match(page,/merchant-app-card-phone/);
  const merchant=read('public/merchant.html');
