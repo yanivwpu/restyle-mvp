@@ -17,3 +17,41 @@
 .partner-app-card p{color:var(--muted);line-height:1.65}
 .partner-install-note{font-size:13px}
 @media(max-width:760px){.partner-app-card{grid-template-columns:1fr;margin:36px 20px 55px;padding:24px}}
+
+
+/* Merchant app gateway: only the installed app reveals account screens. */
+.merchant-install-gate{max-width:600px;margin:18px auto 50px;padding:46px 26px;text-align:center;background:#fff;border:1px solid var(--line);border-radius:26px;box-shadow:0 14px 46px #38251a09;display:flex;flex-direction:column;align-items:center;gap:15px}
+.merchant-install-gate[hidden]{display:none!important}
+.merchant-install-gate h1{font-size:clamp(32px,5vw,44px);letter-spacing:-.05em;margin:2px 0 0}
+.merchant-gate-lead{font-size:16px;line-height:1.65;max-width:480px;margin:0;color:var(--muted)}
+.merchant-install-gate>.merchant-primary{min-width:240px;margin:4px 0 0}
+.merchant-gate-instructions{background:#fff6ee;border:1px solid #f0dac5;border-radius:12px;padding:14px 18px;font-size:14px;line-height:1.65;text-align:left;width:100%;max-width:485px;color:#624736}
+.merchant-gate-hint{font-size:13px;color:var(--muted);line-height:1.6;max-width:470px;margin:0}
+.merchant-gate-desktop{border-top:1px solid var(--line);width:100%;padding-top:17px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;color:var(--muted)}
+.merchant-gate-desktop button{font-weight:700}
+.merchant-gate-phone{width:116px;height:200px;border:6px solid #332b28;border-radius:23px;background:#332b28;position:relative;display:flex;align-items:center;justify-content:center;padding:9px 5px;margin:6px auto;box-shadow:7px 10px 20px #30251e20}
+.merchant-gate-screen{background:linear-gradient(140deg,#fff8f1,#fae7da);width:100%;height:100%;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
+.merchant-gate-screen img{width:54px;height:54px;object-fit:contain}
+.merchant-gate-screen strong{letter-spacing:.1em;font:600 12px Georgia,serif}
+.merchant-gate-screen small{font:700 9px Arial,sans-serif;letter-spacing:.15em;color:#b46327}
+.merchant-gate-speaker{position:absolute;top:5px;left:40%;width:20%;height:3px;background:#938983;border-radius:10px}
+.merchant-gate-home{position:absolute;bottom:2px;width:18px;height:3px;background:#938983;border-radius:6px}
+.partner-schedule-link{margin-top:-9px!important;font-size:13px!important}
+.partner-schedule-link a,.merchant-pay-schedule a{color:#995324;text-underline-offset:3px;text-decoration:underline;font-weight:700}
+.merchant-app-install-card{width:240px;min-height:190px;display:flex;align-items:center;justify-content:center;gap:15px;background:linear-gradient(135deg,#fff8f3,#fae6d6);border:1px solid #edceba;border-radius:18px;text-decoration:none;padding:18px;transition:box-shadow .2s,transform .2s}
+.merchant-app-install-card:hover{box-shadow:0 8px 25px #543b2620;transform:translateY(-2px)}
+.merchant-app-install-card:focus-visible{outline:3px solid #b96935;outline-offset:4px}
+.merchant-app-card-phone{width:67px;height:119px;border:4px solid #332b28;background:#332b28;border-radius:14px;flex-shrink:0;position:relative;display:grid;place-items:center;padding:7px 3px}
+.merchant-app-card-screen{background:#fff;width:100%;height:100%;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.merchant-app-card-screen img{width:42px;height:42px;object-fit:contain}
+.merchant-app-card-screen small{font-size:6px;letter-spacing:.09em;color:#ac5e26;font-weight:800}
+.merchant-app-card-speaker{position:absolute;top:3px;left:42%;width:16%;height:2px;background:#9c928d;border-radius:2px}
+.merchant-app-card-home{position:absolute;bottom:2px;width:11px;height:2px;background:#9c928d;border-radius:3px}
+.merchant-app-card-action{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:7px;font-size:13px;color:#352a25}
+.merchant-app-card-action strong{font-size:17px;line-height:1.2;letter-spacing:-.02em}
+.merchant-app-card-action>span:nth-child(2){font-size:12px;color:#876c5b}
+.merchant-app-card-arrow{color:#d96411;font-size:24px;line-height:1}
+.merchant-pay-schedule{max-width:1130px;padding:34px;margin:0 auto 75px;border-top:1px solid var(--line);scroll-margin-top:20px}
+.merchant-pay-schedule h2{font-size:clamp(23px,3vw,31px);margin:12px 0 8px;letter-spacing:-.03em}
+.merchant-pay-schedule p{max-width:760px;line-height:1.75;color:var(--muted);font-size:14px}
+@media(max-width:760px){.merchant-install-gate{padding:30px 19px;margin:14px auto 34px}.merchant-app-install-card{width:100%;min-height:150px;justify-content:flex-start}.merchant-pay-schedule{margin:0 20px 45px;padding:26px 0}}
