@@ -34,3 +34,14 @@ test('Desktop boutique content grows but merchant installed-app UI remains uncha
  assert.match(read('public/partners.html'),/href="\/merchant\?start=1"/);
  assert.match(read('public/partners.html'),/<summary>Check pay schedule<\/summary>/);
 });
+
+test('Payout disclosure opens without vertically re-centering the Boutique S visual',()=>{
+ const page=read('public/partners.html');
+ const css=read('public/assets/merchant.css');
+ assert.match(page,/<details class="merchant-payout-disclosure">/);
+ assert.match(page,/<div class="partner-visual">/);
+ assert.match(page,/merchant\.css\?v=20261120-stationary-art/);
+ assert.match(css,/@media\(min-width:801px\)\{\s*\.merchant-public \.partner-hero > div:first-child\{align-self:start;margin-top:10px\}\s*\.merchant-public \.partner-hero > \.partner-visual\{align-self:start;margin-top:32px\}/);
+ // The fix is desktop-only; a stacked mobile layout still uses its normal document flow.
+ assert.doesNotMatch(css.slice(css.indexOf('/* Keep the hero artwork fixed')), /@media\(max-width/);
+});

@@ -127,3 +127,12 @@ body.merchant-public{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Se
  .merchant-public .merchant-head .merchant-head-logo{width:126px}
  .merchant-public .merchant-head-link{font-size:13px}
 }
+
+
+/* Keep the hero artwork fixed while the merchant payout table expands.
+   Starting both desktop grid items at fixed offsets prevents the center-aligned
+   S card from moving when the text column gets taller. Mobile still stacks. */
+@media(min-width:801px){
+ .merchant-public .partner-hero > div:first-child{align-self:start;margin-top:10px}
+ .merchant-public .partner-hero > .partner-visual{align-self:start;margin-top:32px}
+}
