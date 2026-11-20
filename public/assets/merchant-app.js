@@ -1,7 +1,15 @@
 (()=>{'use strict';
-const $=id=>document.getElementById(id),sections=['merchantRegister','merchantPending','merchantSignIn','merchantActivate','merchantHome'];
+const $=id=>document.getElementById(id),sections=['merchantInstallGate','merchantRegister','merchantPending','merchantSignIn','merchantActivate','merchantHome'];
 let deferredInstall=null;
-const show=id=>{for(const name of sections)$(name).hidden=name!==id;$('merchantLoading').hidden=true;};
+const installedMode=()=>Boolean(window.matchMedia?.('(display-mode: standalone)').matches||
+  window.matchMedia?.('(display-mode: fullscreen)').matches||navigator.standalone===true);
+const hasLegacyInvite=()=>new URLSearchParams(location.search).has('invite');
+// Standard browser visitors see installation only. Existing emailed legacy invitations remain usable.
+const show=id=>{
+ const screen=!installedMode()&&!(hasLegacyInvite()&&id==='merchantActivate')?'merchantInstallGate':id;
+ for(const name of sections)$(name).hidden=name!==screen;
+ $('merchantLoading').hidden=true;
+};
 const api=async(url,opts)=>{const r=await fetch(url,{credentials:'same-origin',...opts});const data=await r.json();if(!r.ok)throw Error(data.error||'Please try again.');return data;};
 const formBody=f=>Object.fromEntries(new FormData(f).entries());
 function pane(name){for(const id of ['inventory','upload','shipping','earnings','store'])$('merchant'+id[0].toUpperCase()+id.slice(1)).hidden=id!==name;document.querySelectorAll('[data-tab]').forEach(button=>button.classList.toggle('active',button.dataset.tab===name));}
@@ -51,6 +59,7 @@ function showPending(data){
 }
 $('merchantRegisterForm').addEventListener('submit',async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button[type=submit]'),output=$('merchantRegisterError');
+ if(!installedMode()){show('merchantInstallGate');return;}
  if(!form.reportValidity())return;button.disabled=true;output.textContent='';
  try{
   const details={...formBody(form),confirmBusinessInventory:form.elements.confirmBusinessInventory.checked};
@@ -72,15 +81,28 @@ $('merchantPendingAgreementForm').addEventListener('submit',async event=>{
  }catch(err){$('merchantPendingError').textContent=err.message;}finally{btn.disabled=false;}
 });
 function setupInstall(){
- const banner=$('merchantInstallBanner'),button=$('merchantInstallButton'),instructions=$('merchantInstallInstructions');
- const standalone=window.matchMedia?.('(display-mode: standalone)').matches||navigator.standalone===true;
- if(standalone){banner.hidden=true;return;}
- window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;button.textContent='Install app';});
- window.addEventListener('appinstalled',()=>{banner.hidden=true;deferredInstall=null;});
+ const button=$('merchantInstallButton'),instructions=$('merchantInstallInstructions'),copy=$('merchantCopyLink'),status=$('merchantCopyStatus');
+ if(!installedMode()){
+  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+  const mobile=/Android|iPhone|iPad|iPod/.test(navigator.userAgent)||ios;
+  instructions.textContent=ios?'On iPhone or iPad, open Safari, tap Share, select Add to Home Screen, and confirm Open as Web App. Then tap the SHUKCHIC icon.':
+    /Android/.test(navigator.userAgent)?'On Android, tap Install Merchant App. If no prompt appears, use the browser menu and choose Install app or Add to Home screen. Then tap the SHUKCHIC icon.':
+    'On your phone, open shukchic.com/merchant in Safari (iPhone) or Chrome (Android), then add it to your Home Screen. Open the SHUKCHIC icon to register.';
+  if(!mobile){button.textContent='Open link on your phone';button.addEventListener('click',()=>{instructions.focus?.();});}
+ }
+ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;});
+ window.addEventListener('appinstalled',()=>{deferredInstall=null;button.textContent='Open SHUKCHIC from Home Screen';instructions.textContent='Installed. Open the SHUKCHIC icon from your Home Screen to register or sign in.';});
  button.addEventListener('click',async()=>{
-  if(deferredInstall){const prompt=deferredInstall;deferredInstall=null;await prompt.prompt();return;}
-  instructions.hidden=false;
-  instructions.textContent=/iPhone|iPad|iPod/.test(navigator.userAgent)?'On iPhone: open this page in Safari, tap Share, then Add to Home Screen.':'In your mobile browser menu, choose Install app or Add to Home screen. You can register after installing.';
+  if(deferredInstall){
+   const prompt=deferredInstall;deferredInstall=null;
+   try{await prompt.prompt();}catch{}
+  } else {
+   instructions.setAttribute('tabindex','-1');instructions.focus();
+  }
+ });
+ copy.addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText('https://shukchic.com/merchant');status.textContent='App link copied';}
+  catch{status.textContent='Open shukchic.com/merchant on your phone';}
  });
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/merchant-sw.js',{scope:'/merchant'}).catch(()=>{});
 }
