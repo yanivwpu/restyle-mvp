@@ -55,3 +55,22 @@
 .merchant-pay-schedule h2{font-size:clamp(23px,3vw,31px);margin:12px 0 8px;letter-spacing:-.03em}
 .merchant-pay-schedule p{max-width:760px;line-height:1.75;color:var(--muted);font-size:14px}
 @media(max-width:760px){.merchant-install-gate{padding:30px 19px;margin:14px auto 34px}.merchant-app-install-card{width:100%;min-height:150px;justify-content:flex-start}.merchant-pay-schedule{margin:0 20px 45px;padding:26px 0}}
+
+
+/* Compact payout disclosure alongside the boutique earnings copy */
+.merchant-payout-disclosure{max-width:520px;margin:8px 0 0;line-height:1.5}
+.merchant-payout-disclosure summary{display:inline-flex;align-items:center;gap:7px;color:#8b4b25;font-size:14px;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;list-style:none}
+.merchant-payout-disclosure summary::-webkit-details-marker{display:none}
+.merchant-payout-disclosure summary::after{content:"⌄";font-size:17px;line-height:1;transition:transform .15s;display:inline-block;text-decoration:none}
+.merchant-payout-disclosure[open] summary::after{transform:rotate(180deg)}
+.merchant-payout-disclosure summary:focus-visible{outline:2px solid #b96a36;outline-offset:5px;border-radius:3px}
+.merchant-payout-content{margin-top:12px;padding:16px 17px;background:#fff;border:1px solid #e5d6cb;border-radius:13px;box-shadow:0 9px 24px #2c1c1010}
+.partner-hero .merchant-payout-intro{margin:0 0 11px;font-size:13px;font-weight:800;color:#3a302e;line-height:1.4}
+.merchant-payout-table{width:100%;border-collapse:collapse;font-size:14px;text-align:left;font-variant-numeric:tabular-nums}
+.merchant-payout-table th,.merchant-payout-table td{padding:10px 8px;border-bottom:1px solid #f0e7df}
+.merchant-payout-table th{font-size:12px;color:#665a54;font-weight:700}
+.merchant-payout-table th:not(:first-child),.merchant-payout-table td:not(:first-child){text-align:right}
+.merchant-payout-table td strong{color:#b05e24;font-size:16px}
+.partner-hero .merchant-payout-explain,.partner-hero .merchant-payout-disclaimer{font-size:12px;line-height:1.6;margin:11px 0 0;color:#6f625d}
+.partner-hero .merchant-payout-disclaimer{padding-top:9px;border-top:1px solid #efe8e1;font-style:italic}
+@media(max-width:460px){.merchant-payout-content{padding:13px 11px}.merchant-payout-table{font-size:13px}.merchant-payout-table th,.merchant-payout-table td{padding:9px 5px}.merchant-payout-disclosure{max-width:100%}}
