@@ -32,7 +32,7 @@ test('app-first merchant registration, pending approval, in-app signing and prot
   for(const pixels of [192,512]){
    const icon=await get('/assets/merchant-icon-'+pixels+'.png');
    assert.equal(icon.status,200,'PWA app icon must be publicly served');
-   assert.match(icon.headers.get('content-type')||'',/image\\/png/);
+   assert.ok((icon.headers.get('content-type')||'').includes('image/png'));
    const bytes=Buffer.from(await icon.arrayBuffer());
    assert.equal(bytes.readUInt32BE(16),pixels);
    assert.equal(bytes.readUInt32BE(20),pixels);
