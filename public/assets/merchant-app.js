@@ -81,28 +81,56 @@ $('merchantPendingAgreementForm').addEventListener('submit',async event=>{
  }catch(err){$('merchantPendingError').textContent=err.message;}finally{btn.disabled=false;}
 });
 function setupInstall(){
- const button=$('merchantInstallButton'),instructions=$('merchantInstallInstructions'),copy=$('merchantCopyLink'),status=$('merchantCopyStatus');
- const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
-  const mobile=/Android|iPhone|iPad|iPod/.test(navigator.userAgent)||ios;
-  instructions.textContent=ios?'On iPhone or iPad, open Safari, tap Share, select Add to Home Screen, and confirm Open as Web App. Then tap the SHUKCHIC icon.':
-    /Android/.test(navigator.userAgent)?'On Android, tap Install Merchant App. If no prompt appears, use the browser menu and choose Install app or Add to Home screen. Then tap the SHUKCHIC icon.':
-    'On your phone, open shukchic.com/merchant in Safari (iPhone) or Chrome (Android), then add it to your Home Screen. Open the SHUKCHIC icon to register.';
+ const button=$('merchantInstallButton'),guide=$('merchantInstallGuide'),guideTitle=$('merchantInstallGuideTitle'),
+  instructions=$('merchantInstallInstructions'),close=$('merchantInstallGuideClose'),
+  iosSteps=$('merchantIosInstallSteps'),androidSteps=$('merchantAndroidInstallSteps'),
+  desktopSteps=$('merchantDesktopInstallSteps'),copy=$('merchantCopyLink'),status=$('merchantCopyStatus');
+ const userAgent=navigator.userAgent||'';
+ const ios=/iPhone|iPad|iPod/.test(userAgent)||(/Macintosh/.test(userAgent)&&navigator.maxTouchPoints>1);
+ const android=/Android/.test(userAgent);
+ const mobile=ios||android;
+ const inAppBrowser=/Instagram|FBAN|FBAV|TikTok|Twitter|Snapchat|Line\//i.test(userAgent);
  if(!mobile)button.textContent='Copy app link for phone';
+ function showGuide(message=''){
+  guide.hidden=false;
+  button.setAttribute('aria-expanded','true');
+  guideTitle.textContent=ios?'Install on iPhone or iPad':android?'Install on Android':'Open SHUKCHIC on your phone';
+  iosSteps.hidden=!ios;
+  androidSteps.hidden=!android;
+  desktopSteps.hidden=mobile;
+  instructions.textContent=message||(
+   inAppBrowser?'This link opened inside another app. Choose Open in Browser from that app’s menu, then follow these steps.':
+   ios?'iPhone installation uses Safari’s Share menu; websites cannot open the install prompt automatically.':
+   android?'If the browser did not show an install pop-up, use these steps to install from the menu.':
+   'Copy the link or enter it in your phone’s browser to install the app.'
+  );
+  guide.scrollIntoView?.({behavior:'smooth',block:'nearest'});
+ }
+ close.addEventListener('click',()=>{guide.hidden=true;button.setAttribute('aria-expanded','false');button.focus?.();});
  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;});
- window.addEventListener('appinstalled',()=>{deferredInstall=null;button.textContent='Open SHUKCHIC from Home Screen';instructions.textContent='Installed. Open the SHUKCHIC icon from your Home Screen to register or sign in.';});
- button.addEventListener('click',async()=>{
-  if(!mobile){await copyAppLink();return;}
-  if(deferredInstall){
-   const prompt=deferredInstall;deferredInstall=null;
-   try{await prompt.prompt();}catch{}
-  } else {
-   instructions.setAttribute('tabindex','-1');instructions.focus();
-  }
+ window.addEventListener('appinstalled',()=>{
+  deferredInstall=null;button.textContent='Installed — open from Home Screen';
+  showGuide('SHUKCHIC was installed. Go to your phone’s Home Screen and open the SHUKCHIC icon to register.');
  });
  async function copyAppLink(){
   try{await navigator.clipboard.writeText('https://shukchic.com/merchant');status.textContent='App link copied';}
   catch{status.textContent='Open shukchic.com/merchant on your phone';}
  }
+ button.addEventListener('click',async()=>{
+  if(!mobile){await copyAppLink();showGuide();return;}
+  if(deferredInstall){
+   const installPrompt=deferredInstall;
+   deferredInstall=null;
+   try{
+    await installPrompt.prompt();
+    // On Chrome, a dismiss still deserves visible guidance instead of a dead button.
+    const choice=await installPrompt.userChoice;
+    if(choice?.outcome==='dismissed')showGuide('Installation was cancelled. You can still install SHUKCHIC from your browser menu.');
+   }catch{showGuide('Your browser could not open an installation prompt. Follow these steps instead.');}
+   return;
+  }
+  showGuide();
+ });
  copy.addEventListener('click',copyAppLink);
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/merchant-sw.js',{scope:'/merchant'}).catch(()=>{});
 }
