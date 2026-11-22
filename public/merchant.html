@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fff7f0"><meta name="robots" content="noindex,nofollow"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="SHUKCHIC Merchant"><title>SHUKCHIC Merchant</title><link rel="manifest" href="/merchant/manifest.webmanifest"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/merchant.css?v=20261120-installgate"><script defer src="/assets/merchant-app.js?v=20261120-installgate"></script></head>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fff7f0"><meta name="robots" content="noindex,nofollow"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="SHUKCHIC Merchant"><title>SHUKCHIC Merchant</title><link rel="manifest" href="/merchant/manifest.webmanifest"><link rel="icon" href="/assets/shukchic-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/merchant.css?v=20261121-installfix"><script defer src="/assets/merchant-app.js?v=20261121-installfix"></script></head>
 <body class="merchant-app"><header class="merchant-app-head"><a href="/" class="merchant-logo" aria-label="SHUKCHIC"><img src="/assets/shukchic-logo.svg" alt="SHUKCHIC"></a><span class="merchant-app-brand">Merchant</span></header>
 <main class="merchant-screen">
 <section id="merchantInstallGate" class="merchant-install-gate" hidden>
@@ -6,8 +6,24 @@
  <div class="merchant-gate-phone" aria-hidden="true"><span class="merchant-gate-speaker"></span><span class="merchant-gate-screen"><img src="/assets/shukchic-mark.svg" alt=""><strong>SHUKCHIC</strong><small>MERCHANT</small></span><span class="merchant-gate-home"></span></div>
  <h1>Start on your phone.</h1>
  <p class="merchant-gate-lead">Add the SHUKCHIC Merchant App to your Home Screen. Open the app icon to register your boutique and manage your store.</p>
- <button id="merchantInstallButton" type="button" class="merchant-primary">Install Merchant App</button>
- <p id="merchantInstallInstructions" class="merchant-gate-instructions" role="status">On iPhone, open this page in Safari and tap <strong>Share → Add to Home Screen</strong>. On Android, open your browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</p>
+ <button id="merchantInstallButton" type="button" class="merchant-primary" aria-controls="merchantInstallGuide" aria-expanded="false">Install Merchant App</button>
+ <div id="merchantInstallGuide" class="merchant-install-guide" hidden role="region" aria-label="Install SHUKCHIC Merchant App">
+  <div class="merchant-install-guide-head"><strong id="merchantInstallGuideTitle">Install SHUKCHIC on your phone</strong><button id="merchantInstallGuideClose" type="button" class="merchant-guide-close" aria-label="Close installation instructions">×</button></div>
+  <p id="merchantInstallInstructions" class="merchant-guide-subtitle" role="status"></p>
+  <ol id="merchantIosInstallSteps" class="merchant-guide-steps" hidden>
+   <li>Open this page in <strong>Safari</strong> on your iPhone or iPad.</li>
+   <li>Tap <strong>Share</strong> (the square with an upward arrow). On newer iPhones, tap the <strong>Page Menu</strong> first, then <strong>Share</strong>.</li>
+   <li>Choose <strong>Add to Home Screen</strong> and confirm <strong>Open as Web App</strong>, if shown.</li>
+   <li>Tap <strong>Add</strong>, then open the <strong>SHUKCHIC</strong> icon from your Home Screen to register your boutique.</li>
+  </ol>
+  <ol id="merchantAndroidInstallSteps" class="merchant-guide-steps" hidden>
+   <li>Open this page in <strong>Chrome</strong> on your Android phone.</li>
+   <li>Tap the browser's <strong>⋮ menu</strong> and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+   <li>Confirm installation, then tap the <strong>SHUKCHIC</strong> icon from your Home Screen to set up your store.</li>
+  </ol>
+  <div id="merchantDesktopInstallSteps" class="merchant-guide-steps" hidden>On your phone, visit <strong>shukchic.com/merchant</strong> in Safari (iPhone) or Chrome (Android). Use the browser menu to add it to your Home Screen.</div>
+  <p class="merchant-guide-footer">Registration begins after you open the installed app icon. You won't need to fill out a website application first.</p>
+ </div>
  <p class="merchant-gate-hint">Already installed? Tap the <strong>SHUKCHIC</strong> icon on your phone's Home Screen. Registration is available inside the installed app.</p>
  <div class="merchant-gate-desktop"><span>On your phone, visit <strong>shukchic.com/merchant</strong>.</span><button id="merchantCopyLink" class="merchant-text-button" type="button">Copy app link</button><span id="merchantCopyStatus" role="status"></span></div>
  </section>
