@@ -29,6 +29,14 @@ test('app-first merchant registration, pending approval, in-app signing and prot
   assert.match(merchant,/id="merchantPendingAgreementForm"/);
   assert.equal(worker.status,200);assert.match(await worker.text(),/do not cache authenticated/);
   assert.equal((await manifest.json()).start_url,'/merchant?start=1');
+  for(const pixels of [192,512]){
+   const icon=await get('/assets/merchant-icon-'+pixels+'.png');
+   assert.equal(icon.status,200,'PWA app icon must be publicly served');
+   assert.match(icon.headers.get('content-type')||'',/image\\/png/);
+   const bytes=Buffer.from(await icon.arrayBuffer());
+   assert.equal(bytes.readUInt32BE(16),pixels);
+   assert.equal(bytes.readUInt32BE(20),pixels);
+  }
   assert.doesNotThrow(()=>new Function(read('public/assets/merchant-app.js')));
   const signup={business:'App Boutique',contact:'Boutique Owner',email:'appboutique@example.org',phone:'9540001111',
    street:'123 Boutique Ave',city:'Orlando',state:'FL',postalCode:'32801',description:'Designer vintage apparel',
